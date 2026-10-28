@@ -643,7 +643,22 @@ img.brand-mark, img.pairing-logo { object-fit: cover; overflow: hidden; border: 
 .drawer-empty-state.error { border-color: rgba(217,59,48,.28); }
 .drawer-empty-state button { border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); color: var(--ink); padding: 7px 12px; font-size: 10px; cursor: pointer; }
 .drawer-empty-state button:disabled { opacity: .55; cursor: default; }
-.computer-context { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--subtle-bg); }
+.computer-hub-head { flex: 0 0 auto; }
+.computer-profile-list { flex: 1; min-height: 80px; overflow-y: auto; display: flex; flex-direction: column; gap: 7px; }
+.computer-profile-card { display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 9px; align-items: center; padding: 10px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface-2); }
+.computer-profile-card.active { border-color: rgba(7,193,96,.38); background: rgba(7,193,96,.07); }
+.computer-profile-mark { width: 34px; height: 34px; display: grid; place-items: center; border-radius: 10px; background: var(--surface-3); color: var(--muted); font-size: 9px; font-weight: 800; }
+.computer-profile-card.active .computer-profile-mark { background: var(--accent); color: var(--accent-ink); }
+.computer-profile-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.computer-profile-copy strong { overflow: hidden; color: var(--ink); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.computer-profile-copy small { overflow: hidden; color: var(--muted-2); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.computer-profile-actions { grid-column: 1 / -1; display: flex; gap: 6px; }
+.computer-profile-actions button { flex: 1; border: 1px solid var(--line); border-radius: 8px; background: transparent; color: var(--muted); padding: 7px 8px; font-size: 9px; cursor: pointer; }
+.computer-profile-actions .computer-profile-switch { border-color: rgba(7,193,96,.28); color: var(--accent); }
+.computer-profile-actions .computer-profile-delete { flex: 0 0 58px; color: var(--danger); }
+.computer-profile-actions button:disabled { opacity: .55; cursor: default; }
+.computer-profile-current { display: inline-flex; width: fit-content; margin-top: 2px; padding: 2px 6px; border-radius: 999px; background: rgba(7,193,96,.13); color: var(--accent); font-size: 8px; }
+.computer-profiles-status { min-height: 14px; margin: 0; color: var(--danger); font-size: 9px; }.computer-context { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--subtle-bg); }
 .computer-context-mark { width: 32px; height: 32px; flex: 0 0 32px; display: grid; place-items: center; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font-size: 9px; font-weight: 800; letter-spacing: .04em; }
 .computer-context > div { min-width: 0; display: flex; flex-direction: column; gap: 1px; }
 .computer-context small { color: var(--muted-2); font-size: 8px; }
@@ -719,7 +734,7 @@ img.brand-mark, img.pairing-logo { object-fit: cover; overflow: hidden; border: 
 .settings-link-row small { color: var(--muted-2); font-size: 9px; font-weight: 400; }
 .settings-link-row > span:last-child { color: var(--muted-2); font-size: 20px; line-height: 1; }
 .drawer-meta { margin-top: auto; padding: 10px 2px 1px; display: flex; justify-content: space-between; color: var(--muted-2); font-size: 9px; }
-.drawer-tabs { flex: 0 0 auto; display: grid; grid-template-columns: repeat(4, 1fr); gap: 3px; padding: 7px 9px calc(7px + var(--safe-bottom)); border-top: 1px solid var(--line); background: var(--drawer-bg); }
+.drawer-tabs { flex: 0 0 auto; display: grid; grid-template-columns: repeat(5, 1fr); gap: 2px; padding: 7px 6px calc(7px + var(--safe-bottom)); border-top: 1px solid var(--line); background: var(--drawer-bg); }
 .drawer-tabs button { min-width: 0; border: 0; border-radius: 9px; background: transparent; color: var(--muted); padding: 6px 2px 5px; display: flex; flex-direction: column; align-items: center; gap: 3px; font-size: 9px; cursor: pointer; }
 .drawer-tabs button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
 .drawer-tabs button.active { color: var(--accent); background: var(--subtle-bg); }

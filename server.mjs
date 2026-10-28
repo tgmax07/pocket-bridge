@@ -83,7 +83,7 @@ const SECURITY_HEADERS = {
   "Referrer-Policy": "no-referrer",
   "X-Frame-Options": "DENY",
   "Cross-Origin-Resource-Policy": "same-origin",
-  "Permissions-Policy": "camera=(), geolocation=(), microphone=(self)",
+  "Permissions-Policy": "camera=(self), geolocation=(), microphone=(self)",
   "Content-Security-Policy": [
     "default-src 'self'",
     "base-uri 'none'",
@@ -276,6 +276,26 @@ function escapeRegex(value) {
 
 const LOCAL_FILE_EXT_PATTERN = LOCAL_FILE_EXTENSIONS.map((extension) => escapeRegex(extension.slice(1))).join("|");
 
+function isPathWithinRoot(candidate, root) {
+  const relative = path.relative(path.resolve(root), path.resolve(candidate));
+  return relative === "" || (relative !== ".." && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative));
+}
+
+async function realPathWithinRoots(candidate, roots) {
+  let resolvedCandidate;
+  try {
+    resolvedCandidate = await fsp.realpath(candidate);
+  } catch {
+    return false;
+  }
+  for (const root of roots) {
+    try {
+      const resolvedRoot = await fsp.realpath(root);
+      if (isPathWithinRoot(resolvedCandidate, resolvedRoot)) return true;
+    } catch {}
+  }
+  return false;
+}
 function normalizeDetectedLocalPath(rawPath, workdir) {
   let candidate = String(rawPath || "").trim().replace(/^<|>$/g, "");
   if (!candidate) return "";
@@ -581,6 +601,8 @@ export async function startServer(overrides = {}) {
       const normalizedPath = path.normalize(reference.path);
       const key = normalizedPath.toLocaleLowerCase("en-US");
       if (existingPaths.has(key)) continue;
+      const allowedRoots = [...new Set([conversation.workdir || config.workdir, ...config.projects.map((project) => project.path)].filter(Boolean))];
+      if (!await realPathWithinRoots(normalizedPath, allowedRoots)) continue;
       let stat;
       try {
         stat = await fsp.stat(normalizedPath);
@@ -1085,6 +1107,7 @@ export async function startServer(overrides = {}) {
     const tracked = [...store.conversations.values()].filter((conversation) =>
       conversation.sourceCodexSessionId && conversation.unreadCount > 0
     );
+    if (!tracked.length) return;
     try {
       const response = await appServerClient.listThreads({ limit: 200 });
       const readStates = response.readStates || {};
@@ -1412,7 +1435,7 @@ export async function startServer(overrides = {}) {
       const pathname = url.pathname;
 
       if (request.method === "GET" && pathname === "/api/health") {
-        return sendJson(response, 200, { ok: true, startedAt });
+        return sendJson(response, 200, { ok: true, version: packageVersion(), startedAt });
       }
 
       const mediaMatch = pathname.match(/^\/api\/media\/([0-9a-f-]{36})\/([0-9a-f-]{36})$/i);

@@ -102,6 +102,9 @@ const elements = {
   newChatButton: document.getElementById("newChatButton"),
   drawerNewChat: document.getElementById("drawerNewChat"),
   drawerScanButton: document.getElementById("drawerScanButton"),
+  computerProfileList: document.getElementById("computerProfileList"),
+  addComputerButton: document.getElementById("addComputerButton"),
+  computerProfilesStatus: document.getElementById("computerProfilesStatus"),
   menuButton: document.getElementById("menuButton"),
   drawer: document.getElementById("drawer"),
   drawerBackdrop: document.getElementById("drawerBackdrop"),
@@ -185,6 +188,7 @@ const state = {
   token: "",
   config: null,
   computer: null,
+  computerProfiles: [],
   projects: [],
   selectedProjectPath: "",
   conversations: [],
@@ -1395,7 +1399,7 @@ function setupNativeTextInput() {
     }
   });
 }
-const DRAWER_TITLES = { chats: "对话", projects: "项目", settings: "设置", files: "文件" };
+const DRAWER_TITLES = { chats: "对话", computers: "电脑", projects: "项目", settings: "设置", files: "文件" };
 
 function setDrawerTab(tab) {
   const next = DRAWER_TITLES[tab] ? tab : "chats";
@@ -1412,6 +1416,7 @@ function setDrawerTab(tab) {
     panel.hidden = !active;
     panel.setAttribute("aria-hidden", String(!active));
   }
+  if (next === "computers") refreshComputerProfiles();
   if (next === "files") renderConversationFiles().catch(() => {});
 }
 
@@ -1623,7 +1628,7 @@ async function api(path, options = {}) {
   if (response.status === 401) {
     localStorage.removeItem(TOKEN_KEY);
     state.token = "";
-    showPairing("配对已失效，请重新输入链接或令牌。", true);
+    showPairing("配对已失效，请重新输入链接或令牌。");
     throw new ApiError("配对已失效", 401);
   }
   const data = await response.json().catch(() => ({}));
@@ -1650,11 +1655,9 @@ function hideStartupLoading() {
   }, 220);
 }
 
-function showPairing(message = "", revealApp = false) {
+function showPairing(message = "") {
   hideStartupLoading();
-  if (!revealApp) {
-    elements.pairingScreen.classList.remove("hidden");
-  }
+  elements.pairingScreen.classList.remove("hidden");
   elements.pairingStatus.textContent = message;
   elements.appShell.setAttribute("aria-hidden", "true");
   setTimeout(() => elements.pairingInput.focus(), 80);
@@ -1716,6 +1719,147 @@ function updateComputerProfileUi() {
   if (elements.computerNameHelp) elements.computerNameHelp.textContent = `默认名称：${computer.defaultName || "电脑"}`;
 }
 
+function normalizeComputerProfile(profile) {
+  if (!profile || typeof profile !== "object") return null;
+  const id = String(profile.id || "").trim();
+  const url = String(profile.url || "").trim();
+  if (!id || !/^https:\/\//i.test(url)) return null;
+  return {
+    id,
+    name: String(profile.name || "电脑").trim().slice(0, 48) || "电脑",
+    url,
+    lastConnectedAt: Number(profile.lastConnectedAt) || 0,
+    active: Boolean(profile.active),
+  };
+}
+
+function refreshComputerProfiles() {
+  const bridge = window.CodexPocketNative;
+  if (bridge && typeof bridge.getComputerConnections === "function") {
+    try {
+      const data = JSON.parse(bridge.getComputerConnections() || "{}");
+      const profiles = Array.isArray(data) ? data : data.profiles;
+      state.computerProfiles = (Array.isArray(profiles) ? profiles : []).map(normalizeComputerProfile).filter(Boolean);
+    } catch {
+      state.computerProfiles = [];
+    }
+  } else {
+    const computer = currentComputer();
+    state.computerProfiles = computer.id && state.token
+      ? [{
+          id: computer.id,
+          name: computer.name || "这台电脑",
+          url: `${location.origin}/#token=${encodeURIComponent(state.token)}`,
+          lastConnectedAt: Date.now(),
+          active: true,
+        }]
+      : [];
+  }
+  renderComputerProfiles();
+  return state.computerProfiles;
+}
+
+function renderComputerProfiles() {
+  if (!elements.computerProfileList) return;
+  const activeComputer = currentComputer();
+  const profiles = state.computerProfiles
+    .map((profile) => ({ ...profile, active: profile.id === activeComputer.id || profile.active }))
+    .sort((left, right) => Number(right.active) - Number(left.active) || right.lastConnectedAt - left.lastConnectedAt);
+  elements.computerProfileList.innerHTML = "";
+  if (!profiles.length) {
+    const empty = document.createElement("div");
+    empty.className = "drawer-empty-state";
+    const title = document.createElement("strong");
+    title.textContent = "还没有保存的电脑";
+    const copy = document.createElement("p");
+    copy.textContent = "扫描电脑端二维码即可添加。安卓版支持在多个已保存电脑之间切换。";
+    empty.append(title, copy);
+    elements.computerProfileList.append(empty);
+    return;
+  }
+  const bridge = window.CodexPocketNative;
+  const canSwitch = bridge && typeof bridge.switchComputerConnection === "function";
+  const canDelete = bridge && typeof bridge.deleteComputerConnection === "function";
+  for (const profile of profiles) {
+    const card = document.createElement("article");
+    card.className = "computer-profile-card";
+    if (profile.active) card.classList.add("active");
+    const mark = document.createElement("span");
+    mark.className = "computer-profile-mark";
+    mark.textContent = String(profile.id).replace(/[^0-9a-f]/gi, "").slice(-4).toUpperCase() || "PC";
+    const copy = document.createElement("div");
+    copy.className = "computer-profile-copy";
+    const name = document.createElement("strong");
+    name.textContent = profile.name;
+    const host = document.createElement("small");
+    try { host.textContent = new URL(profile.url).hostname; } catch { host.textContent = "连接地址不可用"; }
+    copy.append(name, host);
+    if (profile.active) {
+      const current = document.createElement("span");
+      current.className = "computer-profile-current";
+      current.textContent = "当前电脑";
+      copy.append(current);
+    }
+    card.append(mark, copy);
+    if (canSwitch || canDelete) {
+      const actions = document.createElement("div");
+      actions.className = "computer-profile-actions";
+      const switchButton = document.createElement("button");
+      switchButton.type = "button";
+      switchButton.className = "computer-profile-switch";
+      switchButton.textContent = profile.active ? "已连接" : "切换";
+      switchButton.disabled = profile.active || !canSwitch;
+      switchButton.addEventListener("click", () => switchComputerProfile(profile));
+      actions.append(switchButton);
+      if (canDelete) {
+        const deleteButton = document.createElement("button");
+        deleteButton.type = "button";
+        deleteButton.className = "computer-profile-delete";
+        deleteButton.textContent = "删除";
+        deleteButton.addEventListener("click", () => deleteComputerProfile(profile));
+        actions.append(deleteButton);
+      }
+      card.append(actions);
+    }
+    elements.computerProfileList.append(card);
+  }
+}
+
+function switchComputerProfile(profile) {
+  const bridge = window.CodexPocketNative;
+  if (!bridge || typeof bridge.switchComputerConnection !== "function") {
+    if (elements.computerProfilesStatus) elements.computerProfilesStatus.textContent = "浏览器版只能连接当前电脑";
+    return;
+  }
+  if (elements.computerProfilesStatus) elements.computerProfilesStatus.textContent = "正在切换电脑…";
+  let switched = false;
+  try { switched = bridge.switchComputerConnection(profile.id); } catch {}
+  if (!switched && elements.computerProfilesStatus) {
+    elements.computerProfilesStatus.textContent = "切换失败，请重新扫码连接";
+  }
+}
+
+function deleteComputerProfile(profile) {
+  const label = profile.name || "这台电脑";
+  if (!confirm(`从手机删除“${label}”的连接？\n\n不会删除电脑上的 Codex 数据。`)) return;
+  const bridge = window.CodexPocketNative;
+  if (!bridge || typeof bridge.deleteComputerConnection !== "function") return;
+  let removed = false;
+  try { removed = bridge.deleteComputerConnection(profile.id); } catch {}
+  if (!removed) {
+    if (elements.computerProfilesStatus) elements.computerProfilesStatus.textContent = "删除失败";
+    return;
+  }
+  if (profile.active) {
+    try { state.eventSocket?.close(); } catch {}
+    localStorage.removeItem(TOKEN_KEY);
+    localStorage.removeItem(ACTIVE_KEY);
+    clearCachedAppData();
+    location.replace(location.origin);
+    return;
+  }
+  refreshComputerProfiles();
+}
 function applyComputerProfileUpdate(computer) {
   state.computer = computer;
   if (state.config) state.config.computer = computer;
@@ -1733,6 +1877,8 @@ function applyComputerProfileUpdate(computer) {
   }
   updateComputerProfileUi();
   renderConversationList();
+  persistNativeConnectionUrl();
+  refreshComputerProfiles();
   const projectName = state.active?.workdir
     ? projectBaseName(state.active.workdir)
     : (state.config?.workdirName || "Codex");
@@ -3632,7 +3778,7 @@ async function uploadConversationMedia(file, kind = "image") {
       optimistic = null;
       localStorage.removeItem(TOKEN_KEY);
       state.token = "";
-      showPairing("配对已失效，请重新输入链接或令牌。", true);
+      showPairing("配对已失效，请重新输入链接或令牌。");
       return;
     }
     const uploaded = await response.json().catch(() => ({}));
@@ -3920,7 +4066,7 @@ async function connectSseFallback() {
     if (response.status === 401) {
       localStorage.removeItem(TOKEN_KEY);
       state.token = "";
-      showPairing("配对已失效，请重新输入链接或令牌。", true);
+      showPairing("配对已失效，请重新输入链接或令牌。");
       return;
     }
     if (!response.ok || !response.body) throw new Error(`实时通道失败（${response.status}）`);
@@ -4314,7 +4460,7 @@ async function transcribeVoiceBlob(blob, mimeType) {
     if (response.status === 401) {
       localStorage.removeItem(TOKEN_KEY);
       state.token = "";
-      showPairing("配对已失效，请重新输入链接或令牌。", true);
+      showPairing("配对已失效，请重新输入链接或令牌。");
       throw new Error("配对已失效");
     }
     const data = await response.json().catch(() => ({}));
@@ -4380,7 +4526,7 @@ async function sendDirectVoiceMessage(blob, mimeType, durationMs) {
     if (response.status === 401) {
       localStorage.removeItem(TOKEN_KEY);
       state.token = "";
-      showPairing("配对已失效，请重新输入链接或令牌。", true);
+      showPairing("配对已失效，请重新输入链接或令牌。");
       throw new Error("配对已失效");
     }
     const uploadedData = await response.json().catch(() => ({}));
@@ -4895,9 +5041,13 @@ async function claimThreadTicket(ticket) {
 
 function persistNativeConnectionUrl() {
   if (!state.token) return;
+  const url = `${location.origin}/#token=${encodeURIComponent(state.token)}`;
+  const computer = currentComputer();
   try {
-    window.CodexPocketNative?.saveConnectionUrl?.(`${location.origin}/#token=${encodeURIComponent(state.token)}`);
+    window.CodexPocketNative?.saveConnectionUrl?.(url);
+    if (computer.id) window.CodexPocketNative?.upsertComputerConnection?.(computer.id, computer.name || "电脑", url);
   } catch {}
+  refreshComputerProfiles();
 }
 
 async function exchangePendingThreadLink() {
@@ -5212,6 +5362,7 @@ function bindEvents() {
   elements.refreshFilesButton?.addEventListener("click", () => renderConversationFiles().catch(() => {}));
   elements.scanButton.addEventListener("click", openQrScanner);
   elements.drawerScanButton.addEventListener("click", openQrScanner);
+  elements.addComputerButton?.addEventListener("click", openQrScanner);
   elements.closeScanButton.addEventListener("click", () => elements.scanDialog.close());
   elements.scanDialog.addEventListener("close", stopQrScanner);
   elements.scanDialog.addEventListener("cancel", stopQrScanner);
@@ -5287,6 +5438,8 @@ function bindEvents() {
   elements.closeInfoButton.addEventListener("click", () => elements.infoDialog.close());
   elements.forgetButton.addEventListener("click", () => {
     state.eventAbort?.abort();
+    try { state.eventSocket?.close(); } catch {}
+    try { window.CodexPocketNative?.forgetConnection?.(); } catch {}
     localStorage.removeItem(TOKEN_KEY);
     localStorage.removeItem(ACTIVE_KEY);
     clearCachedAppData();
@@ -5348,7 +5501,7 @@ async function main() {
   }
 
   if (!state.token && !state.pendingThreadTicket) {
-    showPairing("", true);
+    showPairing("");
     return;
   }
 
@@ -5376,7 +5529,7 @@ async function main() {
         setConnection("", "等待重连");
         scheduleBootstrapRetry();
       } else {
-        showPairing(linkingFromQr ? (error.message || "关联二维码已失效，请在电脑端重新生成") : "暂时无法连接电脑端服务，请稍后重试。", true);
+        showPairing(linkingFromQr ? (error.message || "关联二维码已失效，请在电脑端重新生成") : "暂时无法连接电脑端服务，请稍后重试。");
         setConnection("", "未连接");
       }
     }

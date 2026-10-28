@@ -33,7 +33,14 @@ if (threadId) {
   title = data.conversation?.title || title;
   expiresAt = data.expiresAt || "";
 } else {
-  target = (await fs.readFile(path.join(root, ".runtime", "pairing-url.txt"), "utf8")).trim();
+  const localUrl = process.env.CODEX_POCKET_LOCAL_URL || "http://127.0.0.1:8787";
+  const response = await fetch(`${localUrl}/api/bootstrap`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) throw new Error(`无法读取当前公网地址：${response.status}`);
+  const data = await response.json();
+  if (!data.publicUrl) throw new Error("公网隧道尚未就绪，无法生成手机可用的配对二维码");
+  target = `${String(data.publicUrl).replace(/\/$/, "")}/#token=${encodeURIComponent(token)}`;
   expiresAt = new Date(Date.now() + 5 * 60_000).toISOString();
 }
 if (!target) throw new Error("没有可用的二维码目标地址");

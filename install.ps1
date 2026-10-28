@@ -81,6 +81,39 @@ function Ensure-Command([string]$Name) {
   return ""
 }
 
+function Stop-ExistingPocket([string]$TargetRoot, [int]$EffectivePort) {
+  $scheduledTask = Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+  if ($scheduledTask -and $scheduledTask.State -eq "Running") {
+    Write-Step "Stopping existing Codex Pocket task"
+    Stop-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 2
+  }
+  $listener = Get-NetTCPConnection -LocalPort $EffectivePort -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
+  if (-not $listener) { return }
+  $process = Get-CimInstance Win32_Process -Filter "ProcessId=$($listener.OwningProcess)"
+  $owned = $process -and (
+    ($process.ExecutablePath -and $process.ExecutablePath.StartsWith($TargetRoot, [StringComparison]::OrdinalIgnoreCase)) -or
+    ($process.CommandLine -and $process.CommandLine.Contains($TargetRoot, [StringComparison]::OrdinalIgnoreCase))
+  )
+  if (-not $owned) {
+    throw "Port $EffectivePort is used by another process. Stop it before updating Codex Pocket."
+  }
+  Write-Step "Stopping previous Codex Pocket process on port $EffectivePort"
+  $all = Get-CimInstance Win32_Process
+  $ids = [System.Collections.Generic.List[int]]::new()
+  $ids.Add([int]$listener.OwningProcess)
+  for ($index = 0; $index -lt $ids.Count; $index++) {
+    $parentId = $ids[$index]
+    foreach ($child in ($all | Where-Object { $_.ParentProcessId -eq $parentId })) {
+      if (-not $ids.Contains([int]$child.ProcessId)) { $ids.Add([int]$child.ProcessId) }
+    }
+  }
+  for ($index = $ids.Count - 1; $index -ge 0; $index--) {
+    Stop-Process -Id $ids[$index] -Force -ErrorAction SilentlyContinue
+  }
+  Start-Sleep -Seconds 1
+}
+
 try {
   New-Item -ItemType Directory -Force -Path $tempRoot, $installFull | Out-Null
   $sourceDir = $null
@@ -100,6 +133,10 @@ try {
     $sourceDir = $sourceDir.FullName
   }
 
+  $sourcePackagePath = Join-Path $sourceDir "package.json"
+  if (-not (Test-Path -LiteralPath $sourcePackagePath)) { throw "GitHub package is missing package.json" }
+  $desiredVersion = (Get-Content -Raw -Encoding utf8 -LiteralPath $sourcePackagePath | ConvertFrom-Json).version
+  if (-not $desiredVersion) { throw "Unable to read target version" }
   $codex = Ensure-Command "codex"
   if (-not $codex) { throw "Codex was not found. Install and sign in to Codex Desktop/CLI first." }
   if (-not $WorkDir) {
@@ -141,6 +178,12 @@ try {
     ) | Set-Content -Encoding utf8 -LiteralPath $envPath
   }
 
+  $effectivePort = $Port
+  if (Test-Path -LiteralPath $envPath) {
+    foreach ($line in Get-Content -Encoding utf8 -LiteralPath $envPath) {
+      if ($line -match "^CODEX_POCKET_PORT=(\d+)$") { $effectivePort = [int]$Matches[1]; break }
+    }
+  }
   Write-Step "Installing Codex Skills"
   $skillsRoot = Join-Path $env:USERPROFILE ".codex\skills"
   New-Item -ItemType Directory -Force -Path $skillsRoot | Out-Null
@@ -152,6 +195,7 @@ try {
   }
 
   if (-not $SkipStart) {
+    Stop-ExistingPocket $installFull $effectivePort
     if (-not $NoScheduledTask) {
       Write-Step "Configuring Windows logon startup"
       $startScript = Join-Path $installFull "start.ps1"
@@ -172,8 +216,8 @@ try {
     $healthy = $false
     for ($attempt = 0; $attempt -lt 90; $attempt++) {
       try {
-        $health = Invoke-RestMethod -Uri "http://127.0.0.1:$Port/api/health" -TimeoutSec 3
-        if ($health.ok -and (Test-Path -LiteralPath $pairingFile)) { $healthy = $true; break }
+        $health = Invoke-RestMethod -Uri "http://127.0.0.1:$effectivePort/api/health" -TimeoutSec 3
+        if ($health.ok -and $health.version -eq $desiredVersion -and (Test-Path -LiteralPath $pairingFile)) { $healthy = $true; break }
       } catch {}
       Start-Sleep -Seconds 1
     }
@@ -182,7 +226,7 @@ try {
 
   if (-not $SkipStart) {
     $qrOutput = Join-Path $installFull "data\setup-qr.png"
-    $env:CODEX_POCKET_LOCAL_URL = "http://127.0.0.1:$Port"
+    $env:CODEX_POCKET_LOCAL_URL = "http://127.0.0.1:$effectivePort"
     $qrArgs = @((Join-Path $installFull "scripts\create-setup-qr.mjs"), "--output", $qrOutput)
     if ($ThreadId) { $qrArgs += @("--thread-id", $ThreadId) } else { $qrArgs += "--pairing" }
     try {
@@ -194,7 +238,7 @@ try {
     } catch {
       Write-Warning "QR generation failed: $($_.Exception.Message)"
       $pairing = (Get-Content -Raw -LiteralPath $pairingFile).Trim()
-      $pairPage = "http://127.0.0.1:$Port/pair.html#pair=$([uri]::EscapeDataString($pairing))"
+      $pairPage = "http://127.0.0.1:$effectivePort/pair.html#pair=$([uri]::EscapeDataString($pairing))"
       Start-Process $pairPage
       Write-Host "PAIRING_QR_PAGE=$pairPage" -ForegroundColor Yellow
     }

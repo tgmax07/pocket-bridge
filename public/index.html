@@ -5,25 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#11130f">
   <meta name="color-scheme" content="light dark">
-  <script>
-    (() => {
-      const key = "codex-pocket-theme";
-      let mode = "system";
-      try {
-        const saved = localStorage.getItem(key);
-        if (saved === "light" || saved === "dark") mode = saved;
-      } catch {}
-      const resolved = mode === "system"
-        ? (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
-        : mode;
-      const root = document.documentElement;
-      root.dataset.theme = resolved;
-      root.dataset.themeMode = mode;
-      root.style.colorScheme = resolved;
-      const themeMeta = document.querySelector('meta[name="theme-color"]');
-      if (themeMeta) themeMeta.content = resolved === "light" ? "#f3f6ef" : "#11130f";
-    })();
-  </script>
+  <script src="/theme-init.js"></script>
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="口袋">
@@ -33,7 +15,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="stylesheet" href="/styles.css?v=0.6.68">
+  <link rel="stylesheet" href="/styles.css?v=0.6.70">
 </head>
 <body>
   <div class="startup-loader" id="startupLoader" role="status" aria-live="polite">
@@ -95,7 +77,7 @@
         <span class="message-avatar codex" id="typingAvatar" aria-hidden="true">C</span>
         <div class="thinking-bubble">
           <span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span>
-          <span>正在思考</span>
+          <span id="typingText">正在思考</span>
         </div>
       </div>
     </main>
@@ -232,6 +214,17 @@
         <nav class="conversation-list" id="conversationList" aria-label="对话列表"></nav>
       </section>
 
+      <section class="drawer-panel" id="drawerPanelComputers" data-drawer-panel="computers" role="tabpanel" aria-labelledby="drawerTabComputers" hidden>
+        <div class="drawer-section-card computer-hub-head">
+          <p class="eyebrow">COMPUTERS</p>
+          <h3>我的电脑</h3>
+          <p class="drawer-help">每台电脑保存自己的公网地址和长期令牌。同一台电脑上的所有手机共用该令牌。</p>
+          <button class="drawer-primary-link" id="addComputerButton" type="button">扫码添加电脑</button>
+        </div>
+        <div class="computer-profile-list" id="computerProfileList" aria-live="polite"></div>
+        <p class="computer-profiles-status" id="computerProfilesStatus" role="status"></p>
+        <p class="drawer-help">切换电脑会重新连接该电脑并加载它自己的项目、对话和未读消息。</p>
+      </section>
       <section class="drawer-panel" id="drawerPanelProjects" data-drawer-panel="projects" role="tabpanel" aria-labelledby="drawerTabProjects" hidden>
         <div class="computer-context">
           <span class="computer-context-mark" aria-hidden="true">PC</span>
@@ -333,7 +326,7 @@
           <span><strong>连接与安全</strong><small>令牌、项目与执行通道</small></span>
           <span aria-hidden="true">›</span>
         </button>
-        <div class="drawer-meta"><span>口袋</span><span id="drawerVersion">v0.6.68</span></div>
+        <div class="drawer-meta"><span>口袋</span><span id="drawerVersion">v0.6.70</span></div>
       </section>
 
       <section class="drawer-panel" id="drawerPanelFiles" data-drawer-panel="files" role="tabpanel" aria-labelledby="drawerTabFiles" hidden>
@@ -350,7 +343,9 @@
       <button type="button" class="active" id="drawerTabChats" data-drawer-tab="chats" role="tab" aria-controls="drawerPanelChats" aria-selected="true">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v10H9l-4 3v-13Z"/><path d="M8.5 9h7M8.5 12h4.5"/></svg><span>对话</span>
       </button>
-      <button type="button" id="drawerTabProjects" data-drawer-tab="projects" role="tab" aria-controls="drawerPanelProjects" aria-selected="false">
+      <button type="button" id="drawerTabComputers" data-drawer-tab="computers" role="tab" aria-controls="drawerPanelComputers" aria-selected="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span>电脑</span>
+      </button>      <button type="button" id="drawerTabProjects" data-drawer-tab="projects" role="tab" aria-controls="drawerPanelProjects" aria-selected="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5h6l1.8 2h9.2v9H3.5v-11Z"/><path d="M3.5 7.5v-2h5l1.5 2"/></svg><span>项目</span>
       </button>
       <button type="button" id="drawerTabSettings" data-drawer-tab="settings" role="tab" aria-controls="drawerPanelSettings" aria-selected="false">
@@ -377,7 +372,7 @@
       <div class="pairing-help">
         <strong>安卓安装</strong>
         <span>连接成功后，在 Chrome 菜单中选择“添加到主屏幕”。</span>
-        <a class="apk-download" id="downloadApkLink" href="/downloads/codex-pocket-v0.6.68.apk" download="codex-pocket-v0.6.68.apk">下载安卓 APK v0.6.68</a>
+        <a class="apk-download" id="downloadApkLink" href="/downloads/codex-pocket-v0.6.70.apk" download="codex-pocket-v0.6.70.apk">下载安卓 APK v0.6.70</a>
       </div>
     </div>
   </section>
@@ -502,7 +497,7 @@
 
   <script src="/vendor/jsQR.js"></script>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=0.6.68"></script>
+  <script type="module" src="/app.js?v=0.6.70"></script>
 </body>
 </html>
 
