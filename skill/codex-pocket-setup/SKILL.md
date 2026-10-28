@@ -12,7 +12,7 @@ Install the desktop package from GitHub and produce a phone QR without asking fo
 Run this from the current project directory:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/tgmax07/pocket-bridge/main/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://github.com/tgmax07/pocket-bridge/raw/refs/heads/main/install.ps1 | iex"
 ```
 
 The installer:

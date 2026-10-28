@@ -13,7 +13,7 @@ Codex Pocket is a phone interaction layer. All task execution must remain on the
 2. From the project directory, run:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://raw.githubusercontent.com/tgmax07/pocket-bridge/main/install.ps1 | iex"
+powershell -NoProfile -ExecutionPolicy Bypass -Command "irm https://github.com/tgmax07/pocket-bridge/raw/refs/heads/main/install.ps1 | iex"
 ```
 
 3. If the package is already present, run:
