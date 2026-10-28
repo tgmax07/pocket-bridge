@@ -193,6 +193,12 @@ try {
       Copy-Item -LiteralPath $sourceSkill -Destination $skillsRoot -Recurse -Force
     }
   }
+  $workbuddySourceSkill = Join-Path $installFull "skill\codex-pocket-workbuddy-link"
+  if (Test-Path -LiteralPath $workbuddySourceSkill) {
+    $workbuddySkillsRoot = Join-Path $env:USERPROFILE ".workbuddy\skills"
+    New-Item -ItemType Directory -Force -Path $workbuddySkillsRoot | Out-Null
+    Copy-Item -LiteralPath $workbuddySourceSkill -Destination $workbuddySkillsRoot -Recurse -Force
+  }
 
   if (-not $SkipStart) {
     Stop-ExistingPocket $installFull $effectivePort

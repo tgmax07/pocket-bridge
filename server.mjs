@@ -14,6 +14,7 @@ import { AppServerClient, normalizeAppServerNotification } from "./lib/app-serve
 import { captureQrCode, openLocalUrl } from "./lib/desktop-actions.mjs";
 import { writeQrPngFile } from "./lib/qr-code.mjs";
 import { ensureComputerIdentity, setComputerName } from "./lib/computer-identity.mjs";
+import { WorkBuddyAcpClient } from "./lib/workbuddy-acp-client.mjs";
 
 const DESKTOP_INSTRUCTIONS = [
   "You are controlling a real Windows desktop through Codex Pocket.",
@@ -427,6 +428,7 @@ function conversationSummary(conversation) {
   return {
     id: conversation.id,
     title: conversation.title,
+    agentId: conversation.agentId || "codex",
     status: conversation.status,
     createdAt: conversation.createdAt,
     updatedAt: conversation.updatedAt,
@@ -542,6 +544,7 @@ export async function startServer(overrides = {}) {
   ensureDataDirs(config);
   const computer = ensureComputerIdentity(config);
   const token = getPairingToken(config);
+  const workbuddyBridgeSecret = crypto.randomBytes(32).toString("base64url");
   const sseClients = new Set();
   const wsClients = new Set();
   let globalUnreadCount = 0;
@@ -709,8 +712,316 @@ export async function startServer(overrides = {}) {
   const startedAt = new Date().toISOString();
   let appServerClient = null;
   let appServerStartPromise = null;
+  let workbuddyClient = null;
+  const pendingWorkBuddyApprovals = new Map();
   const threadLinkTickets = new Map();
   const threadLinkTtlMs = 5 * 60_000;
+
+  let workbuddyModelCache = null;
+  let workbuddyModelPromise = null;
+
+  function normalizeWorkBuddyModels(session) {
+    const configOptions = Array.isArray(session?.configOptions) ? session.configOptions : [];
+    const modelOption = configOptions.find((option) => option?.id === "model");
+    const available = Array.isArray(session?.models?.availableModels)
+      ? session.models.availableModels
+      : Array.isArray(modelOption?.options)
+        ? modelOption.options
+        : [];
+    const defaultId = String(modelOption?.currentValue || "auto");
+    const seen = new Set();
+    return available.map((model, index) => {
+      const id = String(model?.modelId || model?.value || model?.id || "").trim();
+      if (!id || seen.has(id)) return null;
+      seen.add(id);
+      return {
+        id,
+        displayName: String(model?.name || model?.displayName || id),
+        description: String(model?.description || ""),
+        isDefault: id === defaultId || (!defaultId && index === 0),
+      };
+    }).filter(Boolean);
+  }
+
+  function rememberWorkBuddySession(session) {
+    const models = normalizeWorkBuddyModels(session);
+    if (models.length) workbuddyModelCache = { loadedAt: Date.now(), models };
+    return models;
+  }
+
+  async function getWorkBuddyModels({ refresh = false } = {}) {
+    if (!refresh && workbuddyModelCache && Date.now() - workbuddyModelCache.loadedAt < 5 * 60_000) {
+      return workbuddyModelCache.models;
+    }
+    if (!workbuddyModelPromise) {
+      workbuddyModelPromise = (async () => {
+        const client = await ensureWorkBuddyClient();
+        const session = await client.newSession({
+          cwd: config.projects[0]?.path || config.workdir,
+          mcpServers: [],
+        });
+        return rememberWorkBuddySession(session);
+      })().finally(() => {
+        workbuddyModelPromise = null;
+      });
+    }
+    return workbuddyModelPromise;
+  }
+
+  async function configureWorkBuddySession(client, sessionId, model = "") {
+    await client.setMode(sessionId, "default");
+    await client.setConfigOption(sessionId, "sandbox", "true");
+    if (model) await client.setConfigOption(sessionId, "model", model);
+  }
+
+  async function createWorkBuddySession({ cwd, model = "" }) {
+    const client = await ensureWorkBuddyClient();
+    const session = await client.newSession({ cwd, mcpServers: [] });
+    rememberWorkBuddySession(session);
+    try {
+      await configureWorkBuddySession(client, session.sessionId, model);
+    } catch (error) {
+      if (!error.statusCode) error.statusCode = 503;
+      throw error;
+    }
+    return { client, session, sessionId: session.sessionId };
+  }
+
+  function findWorkbuddyConversation(sessionId) {
+    if (!sessionId) return null;
+    return [...store.conversations.values()].find(
+      (conversation) => conversation.agentId === "workbuddy" && conversation.threadId === sessionId,
+    ) || null;
+  }
+
+  function requestWorkBuddyPermission(message) {
+    const params = message.params || {};
+    const conversation = findWorkbuddyConversation(params.sessionId || "");
+    if (!conversation) return { outcome: { outcome: "cancelled" } };
+    const options = Array.isArray(params.options) ? params.options : [];
+    const allow = options.find((option) => ["allow_once", "allow_always"].includes(option.kind))
+      || options.find((option) => /allow|approve|accept/i.test(option.name || ""));
+    const reject = options.find((option) => ["reject_once", "reject_always"].includes(option.kind))
+      || options.find((option) => /reject|deny|decline/i.test(option.name || ""));
+    if (!allow) return { outcome: { outcome: "cancelled" } };
+    const approvalId = crypto.randomUUID();
+    const toolCall = params.toolCall || {};
+    const toolNames = {
+      read: "读取文件",
+      edit: "修改文件",
+      delete: "删除文件",
+      move: "移动文件",
+      search: "搜索文件",
+      execute: "执行命令",
+      fetch: "访问网络",
+      think: "思考",
+      other: "执行工具",
+    };
+    const toolName = String(
+      toolCall.title
+      || toolCall._meta?.["codebuddy.ai/toolName"]
+      || toolNames[toolCall.kind]
+      || "执行工具",
+    );
+    const rawInput = toolCall.rawInput && typeof toolCall.rawInput === "object"
+      ? JSON.stringify(toolCall.rawInput).slice(0, 600)
+      : "";
+    const locations = Array.isArray(toolCall.locations)
+      ? toolCall.locations.map((item) => item?.path).filter(Boolean).join("\n")
+      : "";
+    const approvalDetail = rawInput || locations;
+    const approvalTitle = `WorkBuddy 请求${toolName}`;
+    return new Promise((resolve) => {
+      const timer = setTimeout(() => {
+        if (!pendingWorkBuddyApprovals.has(approvalId)) return;
+        pendingWorkBuddyApprovals.delete(approvalId);
+        resolve({ outcome: { outcome: "cancelled" } });
+        store.append(conversation, "approval_result", {
+          approvalId,
+          decision: "expired",
+          text: "WorkBuddy 权限审核已超时",
+        });
+        store.setStatus(conversation, "running");
+      }, approvalTimeoutMs);
+      pendingWorkBuddyApprovals.set(approvalId, {
+        conversationId: conversation.id,
+        allowOptionId: allow.optionId,
+        rejectOptionId: reject?.optionId || "",
+        resolve,
+        timer,
+      });
+      store.append(conversation, "approval", {
+        approvalId,
+        approvalType: "workbuddy",
+        title: approvalTitle,
+        text: approvalDetail ? "请确认是否允许这次操作。" : "WorkBuddy 正在等待你的确认。",
+        detail: approvalDetail,
+        status: "pending",
+      });
+      store.setStatus(conversation, "waiting_approval");
+      broadcastPayload({
+        type: "approval",
+        conversationId: conversation.id,
+        approvalId,
+        title: approvalTitle,
+        text: approvalDetail ? "请确认是否允许这次操作。" : "WorkBuddy 正在等待你的确认。",
+      });
+    });
+  }
+
+  function resolveWorkBuddyApproval(conversationId, approvalId, approved) {
+    const pending = pendingWorkBuddyApprovals.get(approvalId);
+    if (!pending || pending.conversationId !== conversationId) return false;
+    if (pending.timer) clearTimeout(pending.timer);
+    pendingWorkBuddyApprovals.delete(approvalId);
+    pending.resolve(!approved && !pending.rejectOptionId
+      ? { outcome: { outcome: "cancelled" } }
+      : { outcome: { outcome: "selected", optionId: approved ? pending.allowOptionId : pending.rejectOptionId } });
+    const conversation = store.get(conversationId);
+    if (conversation) {
+      store.append(conversation, "approval_result", {
+        approvalId,
+        decision: approved ? "accept" : "decline",
+        text: approved ? "已允许 WorkBuddy 本次操作" : "已拒绝 WorkBuddy 本次操作",
+      });
+      store.setStatus(conversation, "running");
+    }
+    return true;
+  }
+
+  function cancelWorkBuddyApprovals(conversationId) {
+    for (const [approvalId, approval] of pendingWorkBuddyApprovals) {
+      if (approval.conversationId !== conversationId) continue;
+      clearTimeout(approval.timer);
+      approval.resolve({ outcome: { outcome: "cancelled" } });
+      pendingWorkBuddyApprovals.delete(approvalId);
+    }
+  }
+
+  async function ensureWorkBuddyClient() {
+    if (workbuddyClient?.connected) return workbuddyClient;
+    const client = new WorkBuddyAcpClient({
+      endpoint: config.workbuddyAcpUrl,
+      clientInfo: {
+        name: "codex-pocket",
+        title: "Codex Pocket",
+        version: packageVersion(),
+      },
+      onServerRequest: async (message) => {
+        if (message.method === "session/request_permission") return requestWorkBuddyPermission(message);
+        return null;
+      },
+    });
+    client.on("disconnect", () => {
+      if (workbuddyClient === client) workbuddyClient = null;
+    });
+    client.on("stream-error", (error) => {
+      console.warn(`[workbuddy] stream error: ${error.message}`);
+    });
+    try {
+      await client.connect();
+      workbuddyClient = client;
+      return client;
+    } catch (error) {
+      error.statusCode = 503;
+      throw error;
+    }
+  }
+
+  async function workbuddyAvailable() {
+    try {
+      const origin = new URL(config.workbuddyAcpUrl).origin;
+      const response = await fetch(origin, { signal: AbortSignal.timeout(1200), cache: "no-store" });
+      return response.ok;
+    } catch {
+      return false;
+    }
+  }
+
+  async function listAgents() {
+    return [
+      { id: "codex", name: "Codex", available: true, defaultModel: "" },
+      { id: "workbuddy", name: "WorkBuddy", available: await workbuddyAvailable(), defaultModel: "auto" },
+    ];
+  }
+
+  function extractWorkBuddyText(content) {
+    if (typeof content === "string") return content;
+    if (content?.type === "text") return String(content.text || "");
+    if (Array.isArray(content)) {
+      return content.map((item) => item?.type === "text" ? String(item.text || "") : "").join("");
+    }
+    return "";
+  }
+
+  function workBuddyHistoryEvents(messages) {
+    const events = [];
+    let role = "";
+    let text = "";
+    let title = "";
+    const flush = () => {
+      const value = text.trim();
+      if (!value) return;
+      events.push({
+        type: role === "user" ? "user_message" : "assistant_message",
+        text: value,
+        countUnread: false,
+      });
+      text = "";
+    };
+    for (const message of messages) {
+      const update = message?.params?.update || {};
+      if (update.sessionUpdate === "session_info_update" && update.title) title = String(update.title).trim();
+      if (update.sessionUpdate === "user_message_chunk") {
+        if (role === "assistant") flush();
+        role = "user";
+        text += extractWorkBuddyText(update.content);
+      } else if (update.sessionUpdate === "agent_message_chunk") {
+        if (role === "user") flush();
+        role = "assistant";
+        text += extractWorkBuddyText(update.content);
+      }
+    }
+    flush();
+    return { events, title };
+  }
+
+  async function linkWorkBuddySession({ sessionId, cwd, title = "" }) {
+    if (!/^[0-9a-f-]{36}$/i.test(sessionId)) {
+      const error = new Error("无效的 WorkBuddy 会话 ID");
+      error.statusCode = 400;
+      throw error;
+    }
+    const existing = [...store.conversations.values()].find(
+      (conversation) => conversation.agentId === "workbuddy" && conversation.threadId === sessionId,
+    );
+    if (existing) return { conversation: store.get(existing.id), alreadyLinked: true };
+    const requestedWorkdir = typeof cwd === "string" && cwd.trim() ? path.resolve(cwd) : "";
+    const workdir = requestedWorkdir
+      && !/workbuddy-host-cli|__workbuddy_cli_host__/i.test(requestedWorkdir)
+      && fs.existsSync(requestedWorkdir)
+      ? requestedWorkdir
+      : config.projects[0]?.path || config.workdir;
+    const client = await ensureWorkBuddyClient();
+    const updates = [];
+    const loaded = await client.loadSession({ sessionId, cwd: workdir, mcpServers: [] }, (message) => updates.push(message));
+    rememberWorkBuddySession(loaded);
+    await configureWorkBuddySession(client, sessionId, "");
+    const history = workBuddyHistoryEvents(updates);
+    const conversation = store.create({
+      title: String(title || history.title || "WorkBuddy 对话").slice(0, 80),
+      threadId: sessionId,
+      workdir,
+      agentId: "workbuddy",
+      importedAt: new Date().toISOString(),
+    });
+    store.appendMany(conversation, [
+      { type: "status", status: "idle", text: "当前 WorkBuddy 对话已接入口袋" },
+      ...history.events,
+    ]);
+    store.markRead(conversation);
+    return { conversation, alreadyLinked: false };
+  }
 
   async function linkDesktopThread(threadId) {
     if (!config.codexHome) {
@@ -1088,7 +1399,7 @@ export async function startServer(overrides = {}) {
   async function markConversationRead(conversation) {
     store.markRead(conversation);
     const threadId = conversation.sourceCodexSessionId || conversation.threadId;
-    if (!threadId || config.transport === "exec") return;
+    if (!threadId || config.transport === "exec" || (conversation.agentId || "codex") !== "codex") return;
     try {
       const client = await ensureAppServer();
       const details = await client.readThread(threadId, false);
@@ -1105,7 +1416,9 @@ export async function startServer(overrides = {}) {
   async function syncReadStatesFromAppServer() {
     if (config.transport === "exec" || !appServerClient?.ready) return;
     const tracked = [...store.conversations.values()].filter((conversation) =>
-      conversation.sourceCodexSessionId && conversation.unreadCount > 0
+      (conversation.agentId || "codex") === "codex"
+      && conversation.sourceCodexSessionId
+      && conversation.unreadCount > 0
     );
     if (!tracked.length) return;
     try {
@@ -1128,7 +1441,7 @@ export async function startServer(overrides = {}) {
     return new Set(["on-request", "untrusted", "never"]).has(requested) ? requested : "on-request";
   }
 
-  async function resolveRequestedModel(value) {
+  async function resolveRequestedModel(value, agentId = "codex") {
     const requested = typeof value === "string" ? value.trim() : "";
     if (!requested) return "";
     if (!/^[A-Za-z0-9._:/-]{1,120}$/.test(requested)) {
@@ -1136,7 +1449,7 @@ export async function startServer(overrides = {}) {
       error.statusCode = 400;
       throw error;
     }
-    const models = await getAvailableModels();
+    const models = agentId === "workbuddy" ? await getWorkBuddyModels() : await getAvailableModels();
     if (models.length && !models.some((model) => model.id === requested)) {
       const error = new Error("所选模型当前不可用，请重新选择");
       error.statusCode = 400;
@@ -1366,6 +1679,70 @@ export async function startServer(overrides = {}) {
     return { started: true };
   }
 
+  function startWorkBuddyTurn(conversation, text, model = "") {
+    if (activeJobs.has(conversation.id)) return { started: false, queued: true };
+    const job = {
+      kind: "workbuddy",
+      conversation,
+      sessionId: conversation.threadId || null,
+      turnId: null,
+      turnState: { stoppedByUser: false },
+    };
+    activeJobs.set(conversation.id, job);
+    void (async () => {
+      const client = await ensureWorkBuddyClient();
+      let sessionId = conversation.threadId;
+      if (!sessionId) {
+        const created = await createWorkBuddySession({
+          cwd: conversation.workdir || config.workdir,
+          model,
+        });
+        sessionId = created.sessionId;
+        job.sessionId = sessionId;
+        store.setThreadId(conversation, sessionId);
+      } else {
+        await configureWorkBuddySession(client, sessionId, model);
+      }
+      let assistantText = "";
+      const result = await client.prompt({ sessionId, text }, (message) => {
+        const update = message.params?.update || {};
+        if (update.sessionUpdate === "agent_message_chunk" && update.content?.type === "text") {
+          assistantText += update.content.text || "";
+        }
+        if (update.sessionUpdate === "session_info_update") {
+          const phase = update._meta?.["codebuddy.ai/agentPhase"]?.phase || "";
+          if (!job.deleted && (phase === "model_requesting" || phase === "model_streaming")) {
+            store.setStatus(conversation, "running");
+          }
+        }
+      });
+      job.turnId = result?.userMessageId || null;
+      if (job.deleted) return;
+      if (assistantText.trim()) {
+        store.append(conversation, "assistant_message", { text: assistantText.trim(), agentId: "workbuddy" });
+      }
+      const stopped = job.turnState.stoppedByUser || result?.stopReason === "cancelled";
+      store.append(conversation, "status", {
+        status: "idle",
+        text: stopped ? "WorkBuddy 任务已停止" : "WorkBuddy 处理完成",
+      });
+      store.setStatus(conversation, "idle");
+    })().catch((error) => {
+      if (job.deleted) return;
+      const stopped = job.turnState.stoppedByUser || /cancel|abort/i.test(error.message || "");
+      if (stopped) {
+        store.append(conversation, "status", { status: "idle", text: "WorkBuddy 任务已停止" });
+      } else {
+        store.append(conversation, "error", { text: `WorkBuddy 执行失败：${error.message}` });
+        store.append(conversation, "status", { status: "idle", text: "WorkBuddy 执行失败" });
+      }
+      store.setStatus(conversation, "idle");
+    }).finally(() => {
+      activeJobs.delete(conversation.id);
+      void startNextQueuedMessage(conversation);
+    });
+    return { started: true };
+  }
   function queuedMessagesFor(conversationId) {
     return (pendingMessages.get(conversationId) || []).map((item) => ({
       id: item.id,
@@ -1409,7 +1786,9 @@ export async function startServer(overrides = {}) {
     store.append(conversation, "status", { status: "running", text: "正在处理排队消息" });
     store.setStatus(conversation, "running");
     try {
-      if (config.transport === "exec") {
+      if (conversation.agentId === "workbuddy") {
+        startWorkBuddyTurn(conversation, next.text, next.model);
+      } else if (config.transport === "exec") {
         await startExecTurn(conversation, next.text, next.model);
       } else {
         const result = await sendViaAppServer(conversation, next.text, next.model, next.approvalPolicy);
@@ -1499,6 +1878,24 @@ export async function startServer(overrides = {}) {
           conversation: publicConversation(conversation),
         });
       }
+      if (request.method === "POST" && pathname === "/api/workbuddy/link") {
+        const bridgeSecret = String(request.headers["x-pocket-bridge-secret"] || "");
+        if (!safeEqual(bridgeSecret, workbuddyBridgeSecret)) {
+          return sendJson(response, 401, { error: "WorkBuddy 本机桥接密钥无效" });
+        }
+        const body = await readJson(request);
+        const sessionId = typeof body.sessionId === "string" ? body.sessionId.trim() : "";
+        const result = await linkWorkBuddySession({
+          sessionId,
+          cwd: typeof body.cwd === "string" ? body.cwd : "",
+          title: typeof body.title === "string" ? body.title : "",
+        });
+        return sendJson(response, result.alreadyLinked ? 200 : 201, {
+          ok: true,
+          alreadyLinked: result.alreadyLinked,
+          conversation: publicConversation(result.conversation),
+        });
+      }
       if (pathname.startsWith("/api/")) {
         if (!hasValidToken(request, token)) {
           return sendJson(response, 401, { error: "未配对或配对令牌已失效" });
@@ -1548,6 +1945,7 @@ export async function startServer(overrides = {}) {
           return sendJson(response, 200, {
             version: packageVersion(),
             computer,
+            agents: await listAgents(),
             publicUrl: config.publicUrl,
             workdir: config.workdir,
             workdirName: path.basename(config.workdir),
@@ -1573,9 +1971,17 @@ export async function startServer(overrides = {}) {
           });
         }
 
+        if (request.method === "GET" && pathname === "/api/agents") {
+          return sendJson(response, 200, { agents: await listAgents() });
+        }
+
         if (request.method === "GET" && pathname === "/api/models") {
-          const models = await getAvailableModels({ refresh: url.searchParams.get("refresh") === "1" });
+          const agentId = url.searchParams.get("agentId") === "workbuddy" ? "workbuddy" : "codex";
+          const models = agentId === "workbuddy"
+            ? await getWorkBuddyModels({ refresh: url.searchParams.get("refresh") === "1" })
+            : await getAvailableModels({ refresh: url.searchParams.get("refresh") === "1" });
           return sendJson(response, 200, {
+            agentId,
             models,
             selectedDefault: models.find((model) => model.isDefault)?.id || "",
           });
@@ -1596,6 +2002,10 @@ export async function startServer(overrides = {}) {
 
         if (request.method === "POST" && pathname === "/api/conversations") {
           const body = await readJson(request);
+          const agentId = body.agentId === "workbuddy" ? "workbuddy" : "codex";
+          if (agentId === "workbuddy" && !await workbuddyAvailable()) {
+            return sendJson(response, 409, { error: "WorkBuddy 当前未运行，请先打开 WorkBuddy" });
+          }
           const requestedPath = typeof body.projectPath === "string" ? path.resolve(body.projectPath) : "";
           const project = requestedPath
             ? config.projects.find((item) => {
@@ -1606,7 +2016,13 @@ export async function startServer(overrides = {}) {
             : config.projects[0];
           if (!project) return sendJson(response, 403, { error: "这个项目没有配置到 Codex Pocket" });
           if (!fs.existsSync(project.path)) return sendJson(response, 400, { error: "项目目录不存在" });
-          const conversation = store.create({ workdir: project.path });
+          let threadId = null;
+          if (agentId === "workbuddy") {
+            const selectedModel = await resolveRequestedModel(body.model, "workbuddy");
+            const created = await createWorkBuddySession({ cwd: project.path, model: selectedModel });
+            threadId = created.sessionId;
+          }
+          const conversation = store.create({ workdir: project.path, agentId, threadId });
           store.append(conversation, "status", { status: "idle", text: `新对话已创建：${project.name}` });
           return sendJson(response, 201, { conversation: publicConversation(conversation) });
         }
@@ -1946,7 +2362,7 @@ export async function startServer(overrides = {}) {
           if (text.length > config.maxMessageChars) {
             return sendJson(response, 413, { error: `消息不能超过 ${config.maxMessageChars} 个字符` });
           }
-          const requestedModel = await resolveRequestedModel(body.model);
+          const requestedModel = await resolveRequestedModel(body.model, conversation.agentId);
 
           const requestedApprovalPolicy = resolveApprovalPolicy(body.approvalPolicy);
           if (activeJobs.has(conversation.id)) {
@@ -1999,7 +2415,12 @@ export async function startServer(overrides = {}) {
 
           const directUserEvent = store.append(conversation, "user_message", { text, displayText: displayText || undefined, hidden });
           store.setStatus(conversation, "running");
-          store.append(conversation, "status", { status: "running", text: "已发送给 Codex" });
+          store.append(conversation, "status", { status: "running", text: conversation.agentId === "workbuddy" ? "已发送给 WorkBuddy" : "已发送给 Codex" });
+            if (conversation.agentId === "workbuddy") {
+              startWorkBuddyTurn(conversation, text, requestedModel);
+              store.updateEvent(conversation, directUserEvent.seq, { delivery: "sent" });
+              return sendJson(response, 202, { ok: true, conversationId: conversation.id, agentId: "workbuddy" });
+            }
             if (config.transport !== "exec") {
               try {
                 const result = await sendViaAppServer(conversation, text, requestedModel, requestedApprovalPolicy);
@@ -2112,7 +2533,9 @@ export async function startServer(overrides = {}) {
           if (!conversation) return sendJson(response, 404, { error: "对话不存在" });
           const body = await readJson(request);
           const approved = body.decision === "accept";
-          if (!resolveApproval(conversation.id, approvalMatch[2], approved)) {
+          const resolved = resolveApproval(conversation.id, approvalMatch[2], approved)
+            || resolveWorkBuddyApproval(conversation.id, approvalMatch[2], approved);
+          if (!resolved) {
             return sendJson(response, 409, { error: "这条权限审核已失效" });
           }
           return sendJson(response, 202, { ok: true, decision: approved ? "accept" : "decline" });
@@ -2233,10 +2656,14 @@ export async function startServer(overrides = {}) {
             approval.resolve({ decision: "cancel" });
             pendingApprovals.delete(approvalId);
           }
+          cancelWorkBuddyApprovals(conversation.id);
           store.append(conversation, "status", { status: "stopping", text: "正在停止任务" });
           if (job.kind === "app-server") {
             if (!job.turnId) return sendJson(response, 409, { error: "任务仍在启动，请稍后再试" });
             await appServerClient.interruptTurn(job.threadId, job.turnId);
+          } else if (job.kind === "workbuddy") {
+            const client = await ensureWorkBuddyClient();
+            await client.cancel(job.sessionId || conversation.threadId);
           } else {
             stopProcessTree(job.child);
           }
@@ -2277,7 +2704,7 @@ export async function startServer(overrides = {}) {
           }
           let shared = false;
           const threadId = conversation.sourceCodexSessionId || conversation.threadId;
-          if (threadId && config.transport !== "exec") {
+          if (threadId && config.transport !== "exec" && (conversation.agentId || "codex") === "codex") {
             try {
               const client = await ensureAppServer();
               if (archive) await client.archiveThread(threadId);
@@ -2298,13 +2725,19 @@ export async function startServer(overrides = {}) {
           const job = activeJobs.get(conversation.id);
           if (job) {
             job.turnState.stoppedByUser = true;
+            job.deleted = true;
             if (job.kind === "app-server" && job.turnId) {
               try { await appServerClient.interruptTurn(job.threadId, job.turnId); } catch {}
+            } else if (job.kind === "workbuddy") {
+              try { await workbuddyClient?.cancel(job.sessionId || conversation.threadId); } catch {}
             } else {
               stopProcessTree(job.child);
             }
             activeJobs.delete(conversation.id);
           }
+          cancelWorkBuddyApprovals(conversation.id);
+          pendingMessages.delete(conversation.id);
+          broadcastQueue(conversation.id);
           await store.delete(conversation.id);
           return sendJson(response, 200, { ok: true });
         }
@@ -2354,6 +2787,20 @@ export async function startServer(overrides = {}) {
 
   const address = server.address();
   const localUrl = `http://${config.host}:${address.port}`;
+  try {
+    await fsp.mkdir(path.dirname(config.workbuddyBridgeConfigPath), { recursive: true });
+    const bridgeTemp = `${config.workbuddyBridgeConfigPath}.${process.pid}.tmp`;
+    await fsp.writeFile(bridgeTemp, JSON.stringify({
+      version: 1,
+      baseUrl: localUrl,
+      secret: workbuddyBridgeSecret,
+      computerId: computer.id,
+      updatedAt: new Date().toISOString(),
+    }, null, 2), { encoding: "utf8", mode: 0o600 });
+    await fsp.rename(bridgeTemp, config.workbuddyBridgeConfigPath);
+  } catch (error) {
+    console.warn(`[workbuddy-bridge] failed to write local bridge config: ${error.message}`);
+  }
   console.log(`[server] Codex Pocket listening at ${localUrl}`);
   console.log(`[server] Computer: ${computer.name} (${computer.id})`);
   console.log(`[server] Workdir: ${config.workdir}`);
@@ -2460,13 +2907,17 @@ export async function startServer(overrides = {}) {
       try { session.socket.destroy(); } catch {}
     }
     wsClients.clear();
+    for (const conversation of store.conversations.values()) cancelWorkBuddyApprovals(conversation.id);
     await Promise.all([...activeJobs.values()].map(async (job) => {
       if (job.kind === "app-server" && job.turnId && appServerClient) {
         try { await appServerClient.interruptTurn(job.threadId, job.turnId); } catch {}
+      } else if (job.kind === "workbuddy" && workbuddyClient) {
+        try { await workbuddyClient.cancel(job.sessionId || job.conversation.threadId); } catch {}
       } else {
         stopProcessTree(job.child);
       }
     }));
+    if (workbuddyClient) await workbuddyClient.close();
     if (appServerClient) await appServerClient.stop();
     await store.waitForWrites();
     const closed = new Promise((resolve) => server.close(resolve));

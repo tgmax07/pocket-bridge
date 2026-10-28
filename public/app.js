@@ -33,6 +33,7 @@ const elements = {
   connectionText: document.getElementById("connectionText"),
   workdirLabel: document.getElementById("workdirLabel"),
   projectSelect: document.getElementById("projectSelect"),
+  agentSelect: document.getElementById("agentSelect"),
   sandboxLabel: document.getElementById("sandboxLabel"),
   infoProjects: document.getElementById("infoProjects"),
   messageList: document.getElementById("messageList"),
@@ -190,6 +191,9 @@ const state = {
   computer: null,
   computerProfiles: [],
   projects: [],
+  agents: [],
+  selectedAgentId: "codex",
+  modelsAgentId: "codex",
   selectedProjectPath: "",
   conversations: [],
   active: null,
@@ -1249,16 +1253,25 @@ function sendBrowserNotification(kind, title, body) {
   } catch {}
 }
 
+function composerAgentId() {
+  return state.active?.agentId || state.selectedAgentId || "codex";
+}
+
 function currentModelDisplayName() {
-  if (!state.selectedModel) return "电脑默认";
+  if (!state.selectedModel) return composerAgentId() === "workbuddy" ? "WorkBuddy 默认" : "电脑默认";
   return state.models.find((model) => model.id === state.selectedModel)?.displayName || state.selectedModel;
+}
+
+function modelPreferenceKey(agentId = composerAgentId()) {
+  return `${MODEL_KEY}:${agentId || "codex"}`;
 }
 
 function setSelectedModel(value, { notify = false } = {}) {
   state.selectedModel = String(value || "");
   try {
-    if (state.selectedModel) localStorage.setItem(MODEL_KEY, state.selectedModel);
-    else localStorage.removeItem(MODEL_KEY);
+    const key = modelPreferenceKey();
+    if (state.selectedModel) localStorage.setItem(key, state.selectedModel);
+    else localStorage.removeItem(key);
   } catch {}
   updateModelUi();
   if (elements.modelStatus) {
@@ -1271,7 +1284,7 @@ function setSelectedModel(value, { notify = false } = {}) {
 function renderQuickModelOptions() {
   if (!elements.quickModelOptions) return;
   elements.quickModelOptions.innerHTML = "";
-  const choices = [{ id: "", displayName: "电脑默认", isDefault: false }, ...state.models];
+  const choices = [{ id: "", displayName: composerAgentId() === "workbuddy" ? "WorkBuddy 默认" : "电脑默认", isDefault: false }, ...state.models];
   for (const model of choices) {
     const button = document.createElement("button");
     button.type = "button";
@@ -1290,24 +1303,29 @@ function updateModelUi() {
   const selected = state.models.find((model) => model.id === state.selectedModel);
   if (elements.modelHelp) {
     elements.modelHelp.textContent = selected?.description
-      || (state.selectedModel ? "后续消息将使用所选模型。" : "使用电脑上 Codex 的默认模型。");
+      || (state.selectedModel ? "后续消息将使用所选模型。" : `使用 ${agentNameById(composerAgentId())} 的默认模型。`);
   }
 }
 
 async function loadAvailableModels({ force = false } = {}) {
   if (!state.token) return;
+  const requestAgentId = composerAgentId();
   if (elements.modelStatus) {
     elements.modelStatus.classList.remove("error");
     elements.modelStatus.textContent = "正在读取电脑上的模型…";
   }
   try {
-    const data = await api(`/api/models${force ? "?refresh=1" : ""}`);
+    const query = new URLSearchParams({ agentId: requestAgentId });
+    if (force) query.set("refresh", "1");
+    const data = await api(`/api/models?${query.toString()}`);
+    if (composerAgentId() !== requestAgentId) return;
     state.models = Array.isArray(data.models) ? data.models : [];
+    state.modelsAgentId = requestAgentId;
     if (elements.modelSelect) {
       elements.modelSelect.innerHTML = "";
       const fallback = document.createElement("option");
       fallback.value = "";
-      fallback.textContent = "跟随电脑默认";
+      fallback.textContent = requestAgentId === "workbuddy" ? "跟随 WorkBuddy 默认" : "跟随电脑默认";
       elements.modelSelect.append(fallback);
       for (const model of state.models) {
         const option = document.createElement("option");
@@ -1317,13 +1335,18 @@ async function loadAvailableModels({ force = false } = {}) {
         elements.modelSelect.append(option);
       }
     }
-    try { state.selectedModel = localStorage.getItem(MODEL_KEY) || ""; } catch { state.selectedModel = ""; }
+    try { state.selectedModel = localStorage.getItem(modelPreferenceKey(requestAgentId)) || ""; } catch { state.selectedModel = ""; }
     if (state.selectedModel && !state.models.some((model) => model.id === state.selectedModel)) {
       state.selectedModel = "";
     }
     updateModelUi();
     if (elements.modelStatus) elements.modelStatus.textContent = `已加载 ${state.models.length} 个模型`;
   } catch (error) {
+    if (composerAgentId() !== requestAgentId) return;
+    state.models = [];
+    state.modelsAgentId = requestAgentId;
+    state.selectedModel = "";
+    updateModelUi();
     if (elements.modelStatus) {
       elements.modelStatus.classList.add("error");
       elements.modelStatus.textContent = error.message;
@@ -1333,7 +1356,11 @@ async function loadAvailableModels({ force = false } = {}) {
 
 function setupModelPicker() {
   if (!elements.modelSelect) return;
-  try { state.selectedModel = localStorage.getItem(MODEL_KEY) || ""; } catch {}
+  try {
+    const legacy = localStorage.getItem(MODEL_KEY);
+    if (legacy && !localStorage.getItem(modelPreferenceKey())) localStorage.setItem(modelPreferenceKey(), legacy);
+    state.selectedModel = localStorage.getItem(modelPreferenceKey()) || "";
+  } catch {}
   updateModelUi();
   elements.modelSelect.addEventListener("change", () => setSelectedModel(elements.modelSelect.value, { notify: true }));
 }
@@ -1596,6 +1623,7 @@ function applyBootstrapSnapshot(data) {
   state.conversationsStatus = "ready";
   state.conversationsError = "";
   state.globalUnread = Number.isFinite(Number(data.globalUnread)) ? Math.max(0, Number(data.globalUnread)) : null;
+  populateAgents(data);
   populateProjects(data);
   updateComputerProfileUi();
   elements.workdirLabel.textContent = computerContextLabel(data.workdirName || "Codex");
@@ -2009,6 +2037,50 @@ function setupComputerNamePrompt() {
       saveFirstNameFromPrompt();
     }
   });
+}
+
+function agentNameById(agentId) {
+  const agent = state.agents.find((item) => item.id === agentId);
+  return agent?.name || (agentId === "workbuddy" ? "WorkBuddy" : "Codex");
+}
+
+function populateAgents(config) {
+  const previousAgents = state.agents;
+  state.agents = Array.isArray(config.agents) ? config.agents : [{ id: "codex", name: "Codex", available: true }];
+  let saved = "codex";
+  try { saved = localStorage.getItem("codex-pocket-agent") || "codex"; } catch {}
+  const preferred = (previousAgents.length ? state.agents.find((agent) => agent.id === state.selectedAgentId && agent.available) : null)
+    || state.agents.find((agent) => agent.id === saved && agent.available)
+    || state.agents.find((agent) => agent.available)
+    || state.agents[0];
+  state.selectedAgentId = preferred?.id || "codex";
+  if (elements.agentSelect) {
+    elements.agentSelect.innerHTML = "";
+    for (const agent of state.agents) {
+      const option = document.createElement("option");
+      option.value = agent.id;
+      option.textContent = `${agent.name || agent.id}${agent.available ? "" : "（未运行）"}`;
+      option.disabled = !agent.available;
+      elements.agentSelect.append(option);
+    }
+    elements.agentSelect.value = state.selectedAgentId;
+    elements.agentSelect.disabled = state.agents.filter((agent) => agent.available).length < 2;
+  }
+}
+
+async function refreshAgentAvailability() {
+  if (!state.token) return;
+  try {
+    const data = await api("/api/agents");
+    const previousAgentId = state.selectedAgentId;
+    populateAgents(data);
+    if (previousAgentId !== state.selectedAgentId) {
+      state.models = [];
+      state.selectedModel = "";
+      updateModelUi();
+      await loadAvailableModels();
+    }
+  } catch {}
 }
 
 function populateProjects(config) {
@@ -3237,7 +3309,7 @@ function renderConversationList() {
     const meta = document.createElement("small");
     const dateLabel = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(conversation.updatedAt));
     const computerName = conversation.computerName || currentComputer().name || "这台电脑";
-    meta.textContent = `${computerName} · ${projectBaseName(conversation.workdir) || "workspace"} · ${dateLabel}${conversation.sourceCodexSessionId ? " · 实时同步" : ""}`;
+    meta.textContent = `${agentNameById(conversation.agentId)} · ${computerName} · ${projectBaseName(conversation.workdir) || "workspace"} · ${dateLabel}${conversation.sourceCodexSessionId ? " · 实时同步" : ""}`;
     main.append(title, meta);
     select.append(main);
     if (unreadCount > 0) {
@@ -3544,6 +3616,13 @@ function updateTopbarTitle(conversation = state.active) {
 }
 function resetConversationView(conversation) {
   state.active = conversation;
+  const activeAgentId = conversation?.agentId || "codex";
+  try { localStorage.setItem("codex-pocket-agent", activeAgentId); } catch {}
+  if (state.selectedAgentId !== activeAgentId || state.modelsAgentId !== activeAgentId) {
+    state.selectedAgentId = activeAgentId;
+    if (elements.agentSelect) elements.agentSelect.value = activeAgentId;
+    loadAvailableModels({ force: true }).catch(() => {});
+  }
   updateTopbarTitle(conversation);
   elements.workdirLabel.textContent = computerContextLabel(conversation?.workdir ? projectBaseName(conversation.workdir) : (state.config?.workdirName || "Codex"));
   state.events = new Map();
@@ -3658,14 +3737,22 @@ async function refreshConversationsWithRetry(attempts = 3) {
 async function createConversation() {
   state.searchQuery = "";
   elements.conversationSearch.value = "";
+  const targetAgentId = state.selectedAgentId || "codex";
+  const model = !state.active || state.active.agentId === targetAgentId ? state.selectedModel : "";
+  const shouldReloadModels = state.active?.agentId !== targetAgentId;
   const data = await api("/api/conversations", {
     method: "POST",
-    body: JSON.stringify({ projectPath: elements.projectSelect.value || state.selectedProjectPath }),
+    body: JSON.stringify({
+      projectPath: elements.projectSelect.value || state.selectedProjectPath,
+      agentId: targetAgentId,
+      model: model || undefined,
+    }),
   });
   const conversation = scopeConversation(data.conversation);
   state.conversations = [conversation, ...state.conversations];
   state.running = false;
   resetConversationView(conversation);
+  if (shouldReloadModels) await loadAvailableModels({ force: true });
   closeDrawer();
   elements.messageInput.focus();
   return conversation;
@@ -4122,6 +4209,7 @@ function openDrawer() {
   elements.drawer.classList.add("open");
   elements.drawer.setAttribute("aria-hidden", "false");
   elements.drawerBackdrop.hidden = wideDrawerMedia.matches;
+  void refreshAgentAvailability();
   const stale = Date.now() - state.lastConversationRefreshAt > 4000 || !state.conversations.length;
   if (stale) {
     refreshConversationsWithRetry(2).catch((error) => {
@@ -5088,10 +5176,11 @@ function migrateScannedPairingOrigin(payload) {
   }
   if (!/^https?:$/.test(scanned.protocol) || scanned.origin === window.location.origin) return false;
   const target = scanned.href;
+  showStartupLoading("正在切换电脑", "二维码已识别，正在打开新的 Codex 连接…");
   try { window.CodexPocketNative?.saveConnectionUrl?.(target); } catch {}
   try { state.eventAbort?.abort(); } catch {}
   try { state.eventSocket?.close(); } catch {}
-  window.location.replace(target);
+  setTimeout(() => window.location.replace(target), 40);
   return true;
 }
 
@@ -5427,6 +5516,17 @@ function bindEvents() {
   elements.menuButton.addEventListener("click", openDrawer);
   elements.closeDrawerButton.addEventListener("click", closeDrawer);
   elements.drawerBackdrop.addEventListener("click", closeDrawer);
+  elements.agentSelect?.addEventListener("change", () => {
+    state.selectedAgentId = elements.agentSelect.value || "codex";
+    try { localStorage.setItem("codex-pocket-agent", state.selectedAgentId); } catch {}
+    if (!state.active || composerAgentId() === state.selectedAgentId) {
+      state.models = [];
+      state.selectedModel = "";
+      updateModelUi();
+      loadAvailableModels({ force: true }).catch(() => {});
+    }
+    showToast(`新对话 Agent：${agentNameById(state.selectedAgentId)}`);
+  });
   elements.projectSelect.addEventListener("change", () => {
     state.selectedProjectPath = elements.projectSelect.value;
     localStorage.setItem("codex-pocket-project", state.selectedProjectPath);
