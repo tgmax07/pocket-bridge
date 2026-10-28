@@ -117,6 +117,8 @@ button, a { touch-action: manipulation; }
   background: var(--chat-bg);
 }
 
+.app-shell > * { min-width: 0; max-width: 100%; }
+
 .topbar {
   min-width: 0;
   min-height: calc(var(--topbar-height) + var(--safe-top));
@@ -206,7 +208,10 @@ img.brand-mark, img.pairing-logo { object-fit: cover; overflow: hidden; border: 
 .quick-prompts button:hover { color: var(--ink); border-color: var(--line-strong); background: var(--surface-2); transform: translateY(-1px); }
 
 .message-list { width: 100%; min-width: 0; max-width: 900px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; overflow-x: clip; }
-.message { min-width: 0; display: flex; align-items: flex-start; gap: 9px; max-width: min(82%, 720px); animation: rise 220ms ease both; }
+.message { min-width: 0; max-width: min(82%, 720px); display: flex; align-items: flex-start; gap: 9px; animation: rise 220ms ease both; }
+.message.has-visual { width: min(86%, 720px); max-width: min(86%, 720px); }
+.message.has-visual .message-body { width: 100%; max-width: 100%; }
+.message.has-visual .message-bubble { max-width: 100%; }
 .message.user { align-self: flex-end; flex-direction: row-reverse; }
 .message.assistant { align-self: flex-start; }
 .message-body { display: flex; flex-direction: column; min-width: 0; }
@@ -232,12 +237,12 @@ img.brand-mark, img.pairing-logo { object-fit: cover; overflow: hidden; border: 
 .message-bubble pre code { padding: 0; border: 0; background: none; font-size: 12px; }
 .message-bubble a { color: var(--link); text-decoration-thickness: 1px; text-underline-offset: 3px; }
 .user .message-bubble a { color: #1c4d86; }
-.image-message { width: min(76vw, 520px); max-width: none; padding: 7px; background: var(--bubble-in); }
+.image-message { width: min(76vw, 520px); max-width: 100%; padding: 7px; background: var(--bubble-in); }
 .image-message a { display: block; line-height: 0; }
 .image-message img { display: block; width: 100%; height: auto; border-radius: 13px; background: #080907; }
 .image-countdown { margin: 9px 6px 3px; color: var(--accent); font-size: 12px; font-weight: 650; text-align: center; }
 .image-countdown.expired { color: var(--danger); }
-.media-message { width: min(86vw, 620px); max-width: none; padding: 8px; background: var(--bubble-in); }
+.media-message { width: min(86vw, 620px); max-width: 100%; padding: 8px; background: var(--bubble-in); }
 .media-card { overflow: hidden; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-2); }
 .media-head { display: flex; align-items: center; gap: 9px; padding: 10px 11px; }
 .media-kind { flex: 0 0 auto; min-width: 39px; border: 1px solid var(--line-strong); border-radius: 7px; padding: 5px 6px; color: var(--accent); font-size: 9px; font-weight: 750; letter-spacing: .05em; text-align: center; }
@@ -273,10 +278,10 @@ img.brand-mark, img.pairing-logo { object-fit: cover; overflow: hidden; border: 
 .voice-message-bubble.playing .voice-message-bars i:nth-child(4) { animation-delay: -.15s; }
 .voice-message-duration { margin-left: auto; font-size: 10px; font-variant-numeric: tabular-nums; opacity: .86; white-space: nowrap; }
 @keyframes voice-message-bar { from { transform: scaleY(.55); opacity: .45; } to { transform: scaleY(1.25); opacity: 1; } }
-.visual-media-bubble { width: auto; max-width: none; padding: 0; border-radius: 9px; background: transparent; box-shadow: none; }
+.visual-media-bubble { width: auto; max-width: 100%; padding: 0; border-radius: 9px; background: transparent; box-shadow: none; }
 .message.pending-upload .message-bubble { opacity: .92; }
 .media-upload-state { margin-top: 6px; color: var(--muted-2); font-size: 9px; }
-.media-thumb-button { position: relative; display: block; width: auto; max-width: none; padding: 0; overflow: hidden; border: 0; border-radius: 9px; background: #050605; cursor: pointer; vertical-align: top; }
+.media-thumb-button { position: relative; display: block; width: auto; max-width: 100%; padding: 0; overflow: hidden; border: 0; border-radius: 9px; background: #050605; cursor: pointer; vertical-align: top; }
 .media-thumb-image { display: block; width: auto; max-width: min(64vw, 240px); max-height: min(42vh, 320px); height: auto; object-fit: contain; border-radius: 9px; background: #050605; }
 .image-thumb { max-width: min(64vw, 240px); line-height: 0; }
 .video-thumb { width: min(64vw, 280px); max-width: min(64vw, 280px); aspect-ratio: var(--video-aspect, 16 / 9); background: #111; }
@@ -749,6 +754,8 @@ img.brand-mark, img.pairing-logo { object-fit: cover; overflow: hidden; border: 
 }
 @media (min-width: 600px) and (min-height: 480px) {
   .app-shell {
+    width: calc(100% - 288px);
+    max-width: calc(100% - 288px);
     margin-left: 288px;
   }
   .topbar {

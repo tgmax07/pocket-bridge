@@ -2437,6 +2437,7 @@ function createImageEvent(event) {
   }
   const article = document.createElement("article");
   article.className = `message ${isUser ? "user" : "assistant"}`;
+  article.classList.add("has-visual");
   const body = document.createElement("div");
   body.className = "message-body";
   const label = document.createElement("span");
@@ -2770,6 +2771,7 @@ function createMediaEvent(event) {
   const isUser = event.role === "user" || event.userMedia === true;
   const article = document.createElement("article");
   article.className = `message ${isUser ? "user" : "assistant"}`;
+  if (!event.voiceMessage) article.classList.add("has-visual");
   const body = document.createElement("div");
   body.className = "message-body";
   const label = document.createElement("span");
