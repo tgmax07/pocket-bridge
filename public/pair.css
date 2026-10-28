@@ -1,0 +1,14 @@
+:root { color-scheme: dark; }
+body { overflow: auto; background: radial-gradient(circle at 50% 15%, rgba(199,243,107,.12), transparent 34%), #11130f; }
+.pair-page { min-height: 100dvh; display: grid; place-items: center; padding: 24px; }
+.pair-panel { width: min(100%, 520px); border: 1px solid var(--line); border-radius: 28px; padding: 28px; background: rgba(23,26,21,.94); box-shadow: 0 30px 100px rgba(0,0,0,.45); text-align: center; }
+.pair-panel h1 { margin: 8px 0; font-size: 30px; letter-spacing: -.04em; }
+.pair-panel p { color: var(--muted); font-size: 13px; line-height: 1.7; }
+#qr { display: inline-flex; padding: 18px; margin: 18px auto; background: #fff; border-radius: 20px; min-width: 260px; min-height: 260px; align-items: center; justify-content: center; }
+#qr svg { width: min(66vw, 360px); height: auto; display: block; }
+.pair-link { word-break: break-all; color: var(--accent); font-size: 11px; text-decoration: none; }
+.pair-error { color: var(--danger); }
+
+
+
+

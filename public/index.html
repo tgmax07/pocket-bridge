@@ -1,0 +1,528 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#11130f">
+  <meta name="color-scheme" content="light dark">
+  <script>
+    (() => {
+      const key = "codex-pocket-theme";
+      let mode = "system";
+      try {
+        const saved = localStorage.getItem(key);
+        if (saved === "light" || saved === "dark") mode = saved;
+      } catch {}
+      const resolved = mode === "system"
+        ? (window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark")
+        : mode;
+      const root = document.documentElement;
+      root.dataset.theme = resolved;
+      root.dataset.themeMode = mode;
+      root.style.colorScheme = resolved;
+      const themeMeta = document.querySelector('meta[name="theme-color"]');
+      if (themeMeta) themeMeta.content = resolved === "light" ? "#f3f6ef" : "#11130f";
+    })();
+  </script>
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="口袋">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="从手机远程使用电脑上的 Codex">
+  <title>口袋</title>
+  <link rel="manifest" href="/manifest.webmanifest">
+  <link rel="icon" href="/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <link rel="stylesheet" href="/styles.css?v=0.6.66">
+</head>
+<body>
+  <div class="app-shell" id="appShell" aria-hidden="true">
+    <header class="topbar">
+      <button class="icon-button menu-button" id="menuButton" type="button" aria-label="打开对话列表">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h10"/></svg>
+        <span class="unread-badge top-unread-badge" id="topUnreadBadge" aria-label="未读消息数" hidden>0</span>
+      </button>
+      <div class="brand">
+        <span class="brand-mark-wrap">
+          <img class="brand-mark" src="/icon-192.png" alt="" aria-hidden="true">
+          <span class="unread-badge brand-unread-badge" id="brandUnreadBadge" aria-label="未读消息数" hidden>0</span>
+        </span>
+        <div>
+          <strong><span id="topbarTitle">聊天</span></strong>
+          <small id="workdirLabel">电脑端 Codex</small>
+        </div>
+      </div>
+      <div class="connection" id="connectionBadge" title="连接状态">
+        <span class="connection-dot"></span>
+        <span id="connectionText">连接中</span>
+      </div>
+      <button class="icon-button" id="newChatButton" type="button" aria-label="新建对话">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+      </button>
+    </header>
+
+    <main class="chat-stage" id="chatStage">
+      <section class="empty-state" id="emptyState">
+        <div class="empty-orbit" aria-hidden="true">
+          <img class="empty-logo" src="/icon-192.png" alt="">
+          <i></i><i></i><i></i>
+        </div>
+        <p class="eyebrow">REMOTE CODEX</p>
+        <h1>电脑在跑，思路不停。</h1>
+        <p class="empty-copy">直接交代任务。Codex 会在电脑上读取文件、执行命令，并把进度实时回传到这里。</p>
+        <div class="quick-prompts" id="quickPrompts">
+          <button type="button" data-prompt="查看当前工作目录，告诉我这里是什么项目">看看当前项目</button>
+          <button type="button" data-prompt="检查项目状态，列出最值得优先处理的三件事">检查项目状态</button>
+          <button type="button" data-prompt="帮我运行测试，并修复失败项">运行测试并修复</button>
+        </div>
+      </section>
+      <section class="message-list" id="messageList" aria-live="polite" aria-label="对话消息"></section>
+      <div class="conversation-loading-row" id="conversationLoadingRow" role="status" aria-live="polite" hidden>
+        <span class="conversation-loading-spinner" aria-hidden="true"></span>
+        <span id="conversationLoadingText">正在加载对话…</span>
+      </div>
+      <div class="typing-row" id="typingRow" role="status" aria-live="polite" hidden>
+        <span class="message-avatar codex" id="typingAvatar" aria-hidden="true">C</span>
+        <div class="thinking-bubble">
+          <span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span>
+          <span>正在思考</span>
+        </div>
+      </div>
+    </main>
+
+    <div class="install-banner" id="installBanner" hidden>
+      <div><strong>安装到安卓桌面</strong><span>像 App 一样全屏打开</span></div>
+      <button type="button" id="installButton">安装</button>
+      <button class="banner-close" type="button" id="dismissInstall" aria-label="关闭">×</button>
+    </div>
+
+    <form class="composer" id="composer">
+
+      <section class="queue-panel" id="queuePanel" aria-live="polite" hidden>
+        <div class="queue-head">
+          <div>
+            <strong>等待发送 <span id="queueCount">(0)</span></strong>
+            <small>与当前思考分开。新消息默认引导当前任务；当前回合无法引导时才进入队列</small>
+          </div>
+          <button class="queue-cancel-all" id="cancelAllQueueButton" type="button">全部取消</button>
+        </div>
+        <div class="queue-list" id="queueList"></div>
+      </section>
+
+      <div class="composer-inner">
+        <button class="mic-button" id="micButton" type="button" aria-label="按住说话" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>
+        </button>
+        <button class="voice-talk-button" id="voiceTalkButton" type="button" hidden>按住 说话</button>
+
+        <textarea id="messageInput" rows="1" maxlength="60000" placeholder="给电脑上的 Codex 发消息…" enterkeyhint="enter" aria-label="消息内容"></textarea>
+        <input id="photoInput" type="file" accept="image/*" hidden>
+        <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
+        <input id="videoInput" type="file" accept="video/*" hidden>
+        <input id="fileInput" type="file" hidden>
+
+        <button class="send-button" id="sendButton" type="submit" aria-label="发送">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 14-7-4 14-3-6-7-1Z"/><path d="m12 13 7-8"/></svg>
+        </button>
+
+        <button class="attach-button" id="attachButton" type="button" aria-label="更多选项">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        </button>
+      </div>
+      <div class="attachment-menu" id="attachmentMenu" hidden>
+        <div class="attachment-section">
+          <strong>图片、视频和文件</strong>
+          <div class="attachment-options">
+            <button type="button" id="pickPhotoButton">选择图片</button>
+            <button type="button" id="takePhotoButton">拍照发送</button>
+            <button type="button" id="pickVideoButton">选择视频</button>
+            <button type="button" id="pickFileButton">选择文件</button>
+          </div>
+        </div>
+        <div class="attachment-section">
+          <strong>模型</strong>
+          <div class="quick-setting-options" id="quickModelOptions"></div>
+        </div>
+        <div class="attachment-section">
+          <strong>审批规则</strong>
+          <div class="quick-setting-options" id="approvalPolicyOptions">
+            <button type="button" data-approval-policy="on-request">按需审批</button>
+            <button type="button" data-approval-policy="untrusted">仅信任操作</button>
+            <button type="button" data-approval-policy="never">不请求审批</button>
+          </div>
+        </div>
+        <div class="attachment-section" id="stopTaskSection" hidden>
+          <strong>当前任务</strong>
+          <button class="attachment-danger" id="stopButton" type="button">停止任务</button>
+        </div>
+      </div>
+      <p class="composer-hint">任务会在你的电脑上执行 · <span id="sandboxLabel">workspace-write</span></p>
+    </form>
+  </div>
+
+  <div class="voice-recording-overlay" id="voiceOverlay" hidden aria-live="polite">
+    <div class="voice-recording-card" id="voiceRecordingCard">
+      <div class="voice-gesture-fan" aria-hidden="true">
+        <span class="voice-gesture-label cancel"><i>←</i><strong>取消</strong></span>
+        <div class="voice-orb">
+          <svg viewBox="0 0 24 24"><path d="M12 3a3 3 0 0 0-3 3v6a3 3 0 0 0 6 0V6a3 3 0 0 0-3-3Z"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3M9 21h6"/></svg>
+        </div>
+        <span class="voice-gesture-label text"><i>→</i><strong>转文字</strong></span>
+      </div>
+      <div class="voice-wave" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i><i></i></div>
+      <div class="voice-recording-time" id="voiceRecordingTime">0:00</div>
+      <p class="voice-overlay-hint" id="voiceOverlayHint">按住说话 · 上滑取消或转文字</p>
+      <p class="voice-live-text" id="voiceLiveText"></p>
+    </div>
+  </div>
+
+  <dialog class="media-viewer" id="mediaViewer" aria-label="媒体查看器">
+    <div class="media-viewer-top">
+      <button class="media-viewer-close" id="closeMediaViewerButton" type="button" aria-label="关闭">×</button>
+      <span class="media-viewer-counter" id="mediaViewerCounter"></span>
+      <button class="media-viewer-save" id="saveMediaViewerButton" type="button">保存</button>
+    </div>
+    <div class="media-viewer-stage" id="mediaViewerStage">
+      <img id="mediaViewerImage" alt="" hidden draggable="false">
+      <video id="mediaViewerVideo" controls playsinline hidden></video>
+      <div class="media-viewer-error" id="mediaViewerError" hidden></div>
+    </div>
+    <div class="media-viewer-bottom">
+      <button id="prevMediaViewerButton" type="button" aria-label="上一张">‹</button>
+      <span id="mediaViewerCaption"></span>
+      <button id="nextMediaViewerButton" type="button" aria-label="下一张">›</button>
+    </div>
+  </dialog>
+
+  <div class="drawer-backdrop" id="drawerBackdrop" hidden></div>
+  <aside class="drawer" id="drawer" aria-label="侧边栏" aria-hidden="true">
+    <header class="drawer-head">
+      <div class="drawer-brand">
+        <img class="brand-mark" src="/icon-192.png" alt="">
+        <div><p class="eyebrow">PHONE TO CODEX</p><h2 id="drawerTitle">对话</h2></div>
+      </div>
+      <button class="icon-button" id="closeDrawerButton" type="button" aria-label="关闭">×</button>
+    </header>
+
+    <div class="drawer-content">
+      <section class="drawer-panel" id="drawerPanelChats" data-drawer-panel="chats" role="tabpanel" aria-labelledby="drawerTabChats">
+        <div class="drawer-chat-tools">
+          <div class="drawer-quick-actions">
+            <button class="new-chat-wide" id="drawerNewChat" type="button"><span aria-hidden="true">＋</span> 新建对话</button>
+            <button class="drawer-scan-button" id="drawerScanButton" type="button" aria-label="扫码关联电脑对话">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/><path d="M8 8h3v3H8zM14 8h2M8 14v2M13 13h3v3h-3z"/></svg>
+              <span>扫码</span>
+            </button>
+          </div>
+          <label class="drawer-search" for="conversationSearch">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="6.5"/><path d="m16 16 4 4"/></svg>
+            <input id="conversationSearch" type="search" placeholder="搜索对话或项目" autocomplete="off">
+          </label>
+        </div>
+        <nav class="conversation-list" id="conversationList" aria-label="对话列表"></nav>
+      </section>
+
+      <section class="drawer-panel" id="drawerPanelProjects" data-drawer-panel="projects" role="tabpanel" aria-labelledby="drawerTabProjects" hidden>
+        <div class="computer-context">
+          <span class="computer-context-mark" aria-hidden="true">PC</span>
+          <div><small>当前连接电脑</small><strong id="projectComputerName">—</strong><span id="projectComputerId"></span></div>
+        </div>
+        <div class="drawer-section-card">
+          <p class="eyebrow">PROJECTS</p>
+          <h3>工作项目</h3>
+          <label class="project-picker" for="projectSelect"><span>新对话项目</span><select id="projectSelect" aria-label="新对话项目"></select></label>
+          <p class="drawer-help">项目文件直接使用电脑上的原目录，不会复制到手机。</p>
+        </div>
+        <div class="drawer-section-card">
+          <p class="eyebrow">CODEX DATA</p>
+          <h3>导入 Desktop 对话</h3>
+          <p class="drawer-help">把电脑上的 Codex 线程接入 Pocket，并保持实时同步。</p>
+          <button class="drawer-primary-link" id="importButton" type="button">导入 Codex 对话</button>
+        </div>
+      </section>
+
+      <section class="drawer-panel" id="drawerPanelSettings" data-drawer-panel="settings" role="tabpanel" aria-labelledby="drawerTabSettings" hidden>
+        <details class="settings-group">
+          <summary><span>模型</span><small id="modelSummary">电脑默认</small></summary>
+          <div class="settings-group-body model-settings">
+            <label for="modelSelect">对话模型</label>
+            <select id="modelSelect"><option value="">跟随电脑默认</option></select>
+            <p id="modelHelp">模型列表来自电脑上的 Codex app-server。</p>
+            <p class="model-status" id="modelStatus" role="status"></p>
+          </div>
+        </details>
+
+        <details class="settings-group">
+          <summary><span>当前电脑</span><small id="computerNameSummary">电脑</small></summary>
+          <div class="settings-group-body computer-name-editor">
+            <label for="computerNameInput">显示名称</label>
+            <input id="computerNameInput" type="text" maxlength="48" inputmode="text" enterkeyhint="done" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" placeholder="电脑 3EB9">
+            <div class="computer-name-actions">
+              <button class="computer-name-save" id="saveComputerNameButton" type="button">保存名称</button>
+              <button class="computer-name-reset" id="resetComputerNameButton" type="button">恢复默认</button>
+            </div>
+            <p class="computer-name-help" id="computerNameHelp">默认名称由电脑 ID 后四位生成。</p>
+            <p class="computer-name-status" id="computerNameStatus" role="status"></p>
+          </div>
+        </details>
+
+        <details class="settings-group">
+          <summary><span>外观</span><small>主题颜色</small></summary>
+          <div class="settings-group-body">
+            <span class="theme-picker-label">主题颜色</span>
+            <div class="theme-options" role="group" aria-label="主题颜色">
+              <button type="button" data-theme-choice="system" aria-pressed="true">跟随系统</button>
+              <button type="button" data-theme-choice="light" aria-pressed="false">浅色</button>
+              <button type="button" data-theme-choice="dark" aria-pressed="false">深色</button>
+            </div>
+          </div>
+        </details>
+
+        <details class="settings-group">
+          <summary><span>通知</span><small id="notificationSummary">后台完成提醒</small></summary>
+          <div class="settings-group-body notification-settings">
+            <label class="notification-toggle"><span><strong>允许通知</strong><small>退到后台时提醒</small></span><input id="notificationsEnabled" type="checkbox" checked></label>
+            <label class="notification-toggle"><span><strong>任务完成</strong><small>Codex 回复完成后通知</small></span><input id="notifyCompletion" type="checkbox" checked></label>
+            <label class="notification-toggle"><span><strong>权限审核</strong><small>需要你确认时提醒</small></span><input id="notifyApproval" type="checkbox" checked></label>
+            <p class="notification-help">Android 可能显示一条低优先级的后台连接通知，以维持及时提醒。</p>
+            <p class="notification-status" id="notificationStatus" role="status"></p>
+          </div>
+        </details>
+
+        <details class="settings-group">
+          <summary><span>个性化</span><small>名字与头像</small></summary>
+          <div class="settings-group-body">
+            <div class="identity-settings">
+              <div class="identity-row">
+                <button class="avatar-preview codex" id="codexAvatarPreview" type="button" aria-label="更换 Codex 头像" title="点击更换 Codex 头像">C</button>
+                <div class="identity-fields">
+                  <label for="codexNameInput">Codex 名字</label>
+                  <input id="codexNameInput" type="text" maxlength="20" inputmode="text" enterkeyhint="done" autocapitalize="off" autocomplete="off" placeholder="Codex">
+                  <span class="avatar-edit-hint">点击头像更换</span>
+                  <input id="codexAvatarFile" type="file" accept="image/*" hidden>
+                </div>
+              </div>
+              <div class="identity-row">
+                <button class="avatar-preview user" id="userAvatarPreview" type="button" aria-label="更换我的头像" title="点击更换我的头像">
+                  <svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 19c.7-3.5 3-5.4 6.5-5.4s5.8 1.9 6.5 5.4"/></svg>
+                </button>
+                <div class="identity-fields">
+                  <label for="userNameInput">我的名字</label>
+                  <input id="userNameInput" type="text" maxlength="20" inputmode="text" enterkeyhint="done" autocapitalize="off" autocomplete="off" placeholder="我">
+                  <span class="avatar-edit-hint">点击头像更换</span>
+                  <input id="userAvatarFile" type="file" accept="image/*" hidden>
+                </div>
+              </div>
+              <button class="identity-save" id="saveIdentityButton" type="button">保存名字</button>
+              <button class="identity-reset" id="resetIdentityButton" type="button">恢复默认名字和头像</button>
+            </div>
+          </div>
+        </details>
+
+        <button class="settings-link-row" id="infoButton" type="button">
+          <span><strong>连接与安全</strong><small>令牌、项目与执行通道</small></span>
+          <span aria-hidden="true">›</span>
+        </button>
+        <div class="drawer-meta"><span>口袋</span><span id="drawerVersion">v0.6.66</span></div>
+      </section>
+
+      <section class="drawer-panel" id="drawerPanelFiles" data-drawer-panel="files" role="tabpanel" aria-labelledby="drawerTabFiles" hidden>
+        <div class="download-panel-head">
+          <div><p class="eyebrow">CONVERSATION FILES</p><h3>对话文件与链接</h3></div>
+          <button id="refreshFilesButton" type="button">刷新</button>
+        </div>
+        <p class="drawer-help">这里保留对话中的文件和访问记录；网页与图片会单独列在“最近访问”。</p>
+        <div class="download-history-list" id="conversationFileList"></div>
+      </section>
+    </div>
+
+    <nav class="drawer-tabs" role="tablist" aria-label="侧边栏导航">
+      <button type="button" class="active" id="drawerTabChats" data-drawer-tab="chats" role="tab" aria-controls="drawerPanelChats" aria-selected="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v10H9l-4 3v-13Z"/><path d="M8.5 9h7M8.5 12h4.5"/></svg><span>对话</span>
+      </button>
+      <button type="button" id="drawerTabProjects" data-drawer-tab="projects" role="tab" aria-controls="drawerPanelProjects" aria-selected="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5h6l1.8 2h9.2v9H3.5v-11Z"/><path d="M3.5 7.5v-2h5l1.5 2"/></svg><span>项目</span>
+      </button>
+      <button type="button" id="drawerTabSettings" data-drawer-tab="settings" role="tab" aria-controls="drawerPanelSettings" aria-selected="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M12 3.8v2M12 18.2v2M20.2 12h-2M5.8 12h-2M17.8 6.2l-1.4 1.4M7.6 16.4l-1.4 1.4M17.8 17.8l-1.4-1.4M7.6 7.6 6.2 6.2"/></svg><span>设置</span>
+      </button>
+      <button type="button" id="drawerTabFiles" data-drawer-tab="files" role="tab" aria-controls="drawerPanelFiles" aria-selected="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v11M8 10l4 4 4-4"/><path d="M5 18v2h14v-2"/></svg><span>文件</span>
+      </button>
+    </nav>
+
+  <section class="pairing-screen" id="pairingScreen">
+    <div class="pairing-card">
+      <img class="pairing-logo" src="/icon-192.png" alt="口袋">
+      <p class="eyebrow">口袋</p>
+      <h1>连接你的电脑</h1>
+      <p>粘贴电脑端生成的配对链接，或输入配对令牌。令牌只保存在这台手机和你的电脑上。</p>
+      <form id="pairingForm">
+        <label for="pairingInput">配对链接或令牌</label>
+        <input id="pairingInput" type="text" autocomplete="off" spellcheck="false" placeholder="https://…/#token=…">
+        <button type="submit">连接 Codex</button>
+        <button class="scan-button" id="scanButton" type="button">扫码连接电脑</button>
+      </form>
+      <p class="pairing-status" id="pairingStatus" role="status"></p>
+      <div class="pairing-help">
+        <strong>安卓安装</strong>
+        <span>连接成功后，在 Chrome 菜单中选择“添加到主屏幕”。</span>
+        <a class="apk-download" id="downloadApkLink" href="/downloads/codex-pocket-v0.6.66.apk" download="codex-pocket-v0.6.66.apk">下载安卓 APK v0.6.66</a>
+      </div>
+    </div>
+  </section>
+
+  <dialog class="info-dialog download-confirm-dialog" id="downloadConfirmDialog" aria-labelledby="downloadConfirmTitle">
+    <div class="dialog-head">
+      <div><p class="eyebrow">DOWNLOAD APK</p><h2 id="downloadConfirmTitle">下载安装包？</h2></div>
+    </div>
+    <p class="download-confirm-copy">将下载最新版口袋 APK。下载完成后，需要允许浏览器或口袋安装未知来源应用。</p>
+    <div class="dialog-actions download-confirm-actions">
+      <button class="computer-name-primary" id="confirmDownloadButton" type="button">确认下载</button>
+      <button id="cancelDownloadButton" type="button">取消</button>
+    </div>
+  </dialog>
+
+  <dialog class="info-dialog computer-name-dialog" id="computerNameDialog" aria-labelledby="computerNameDialogTitle">
+    <div class="dialog-head">
+      <div><p class="eyebrow">NEW COMPUTER</p><h2 id="computerNameDialogTitle">给这台电脑起个名字</h2></div>
+    </div>
+    <p class="computer-name-prompt-copy">第一次连接这台电脑。设置一个容易辨认的名称，之后会在对话和项目列表中显示。</p>
+    <div class="computer-name-dialog-body">
+      <label for="firstComputerNameInput">电脑名称</label>
+      <input id="firstComputerNameInput" type="text" maxlength="48" inputmode="text" enterkeyhint="done" autocapitalize="off" autocorrect="off" spellcheck="false" autocomplete="off" placeholder="电脑 3EB9">
+      <p id="firstComputerNameHelp">默认名称由电脑 ID 后四位生成。</p>
+      <p class="computer-name-prompt-status" id="firstComputerNameStatus" role="status"></p>
+    </div>
+    <div class="dialog-actions computer-name-prompt-actions">
+      <button class="computer-name-primary" id="saveFirstComputerNameButton" type="button">保存名称</button>
+      <button id="skipFirstComputerNameButton" type="button">暂时使用默认名称</button>
+    </div>
+  </dialog>
+
+  <dialog class="info-dialog" id="infoDialog">
+    <div class="dialog-head">
+      <div><p class="eyebrow">CONNECTION</p><h2>连接与安全</h2></div>
+      <button class="icon-button" id="closeInfoButton" type="button" aria-label="关闭">×</button>
+    </div>
+    <dl class="info-grid">
+      <dt>当前电脑</dt><dd id="infoComputerName">—</dd>
+      <dt>电脑标识</dt><dd id="infoComputerId">—</dd>
+      <dt>当前项目</dt><dd id="infoWorkdir">—</dd>
+      <dt>可用项目</dt><dd id="infoProjects">—</dd>
+      <dt>沙箱权限</dt><dd id="infoSandbox">—</dd>
+      <dt>执行通道</dt><dd id="infoTransport">—</dd>
+      <dt>公网入口</dt><dd id="infoPublicUrl">—</dd>
+      <dt>连接状态</dt><dd id="infoConnection">—</dd>
+    </dl>
+    <div class="dialog-actions">
+      <button id="copyPairingButton" type="button">复制本机配对链接</button>
+      <button id="forgetButton" class="danger-quiet" type="button">从此手机移除令牌</button>
+    </div>
+    <p class="security-note">配对链接等同密码，请勿转发给他人。公网隧道只转发到电脑本机，Codex 仍受工作目录与沙箱限制。</p>
+  </dialog>
+
+  <dialog class="info-dialog import-dialog" id="importDialog">
+    <div class="dialog-head">
+      <div><p class="eyebrow">IMPORT FROM CODEX</p><h2>导入 Codex 对话</h2></div>
+      <button class="icon-button" id="closeImportButton" type="button" aria-label="关闭">×</button>
+    </div>
+    <p class="import-copy">从这台电脑的 Codex 会话库读取最近对话。导入后可以在口袋中继续。</p>
+    <div class="import-session-list" id="importSessionList"></div>
+    <p class="import-status" id="importStatus" role="status"></p>
+  </dialog>
+  <dialog class="info-dialog avatar-crop-dialog" id="avatarCropDialog" aria-labelledby="avatarCropTitle">
+    <div class="dialog-head">
+      <div><p class="eyebrow">CROP AVATAR</p><h2 id="avatarCropTitle">选择头像区域</h2></div>
+      <button class="icon-button" id="closeAvatarCropButton" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="avatar-crop-stage" id="avatarCropStage">
+      <img id="avatarCropImage" alt="待裁剪头像" draggable="false">
+      <div class="avatar-crop-mask" aria-hidden="true"></div>
+    </div>
+    <div class="avatar-crop-controls">
+      <label for="avatarCropZoom">缩放</label>
+      <input id="avatarCropZoom" type="range" min="1" max="4" step="0.01" value="1">
+      <p id="avatarCropInfo">拖动图片选择显示区域</p>
+    </div>
+    <div class="dialog-actions avatar-crop-actions">
+      <button class="computer-name-primary" id="saveAvatarCropButton" type="button">使用此区域</button>
+      <button id="cancelAvatarCropButton" type="button">取消</button>
+    </div>
+  </dialog>
+
+  <dialog class="info-dialog approval-alert-dialog" id="approvalAlertDialog" aria-labelledby="approvalAlertTitle">
+    <div class="dialog-head">
+      <div><p class="eyebrow">APPROVAL REQUIRED</p><h2 id="approvalAlertTitle">Codex 需要你确认</h2></div>
+      <button class="icon-button" id="dismissApprovalAlertButton" type="button" aria-label="稍后处理">×</button>
+    </div>
+    <p class="approval-alert-copy" id="approvalAlertText">电脑上的 Codex 正在等待权限审核。</p>
+    <div class="dialog-actions">
+      <button class="computer-name-primary" id="openApprovalAlertButton" type="button">去处理</button>
+      <button id="laterApprovalAlertButton" type="button">稍后</button>
+    </div>
+  </dialog>
+
+  <dialog class="queue-steer-dialog" id="steerDialog">
+    <div class="dialog-head">
+      <div><p class="eyebrow">STEER CURRENT TURN</p><h2>引导当前任务？</h2></div>
+      <button class="icon-button" id="closeSteerButton" type="button" aria-label="关闭">×</button>
+    </div>
+    <p class="steer-copy">当前 Codex 正在思考。选择“引导当前任务”会把这条排队消息立即送入当前回合；选择“继续排队”则等当前任务结束后再发送。</p>
+    <blockquote class="steer-preview" id="steerPreview"></blockquote>
+    <p class="steer-status" id="steerStatus" role="status" hidden></p>
+    <div class="dialog-actions">
+      <button class="computer-name-primary" id="confirmSteerButton" type="button">引导当前任务</button>
+      <button id="cancelSteerButton" type="button">继续排队</button>
+    </div>
+  </dialog>
+
+  <dialog class="scan-dialog" id="scanDialog">
+    <div class="dialog-head">
+      <div><p class="eyebrow">SCAN TO PAIR</p><h2>扫描电脑二维码</h2></div>
+      <button class="icon-button" id="closeScanButton" type="button" aria-label="关闭">×</button>
+    </div>
+    <div class="scan-viewport">
+      <video id="scanVideo" autoplay playsinline muted></video>
+      <div class="scan-frame" aria-hidden="true"></div>
+    </div>
+    <p class="scan-status" id="scanStatus" role="status">正在打开相机…</p>
+    <canvas id="scanCanvas" hidden></canvas>
+  </dialog>
+
+  <script src="/vendor/jsQR.js"></script>
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  <script type="module" src="/app.js?v=0.6.66"></script>
+</body>
+</html>
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
