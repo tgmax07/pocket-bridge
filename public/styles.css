@@ -449,6 +449,32 @@ img.brand-mark, img.pairing-logo { object-fit: cover; overflow: hidden; border: 
 .install-banner button { border: 0; border-radius: 9px; background: var(--accent); color: var(--accent-ink); font-weight: 700; font-size: 11px; padding: 7px 11px; cursor: pointer; }
 .install-banner .banner-close { width: 25px; height: 25px; padding: 0; background: transparent; color: var(--muted); font-size: 20px; }
 
+.startup-loader {
+  position: fixed;
+  inset: 0;
+  z-index: 140;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: max(32px, calc(24px + var(--safe-top))) 24px max(32px, calc(24px + var(--safe-bottom)));
+  background:
+    radial-gradient(circle at 50% 34%, rgba(7,193,96,.12), transparent 32%),
+    linear-gradient(160deg, var(--surface-2) 0%, var(--surface) 52%, var(--pairing-bg-end) 100%);
+  text-align: center;
+  transition: opacity 180ms ease, visibility 180ms ease;
+}
+.startup-loader.done { opacity: 0; visibility: hidden; pointer-events: none; }
+.startup-loader-mark { position: relative; width: 76px; height: 76px; margin-bottom: 18px; }
+.startup-loader-mark img { width: 64px; height: 64px; margin: 6px; border-radius: 20px 20px 20px 7px; box-shadow: 0 12px 36px rgba(0,0,0,.22); }
+.startup-loader-mark span { position: absolute; inset: 0; border: 2px solid transparent; border-top-color: var(--accent); border-right-color: rgba(7,193,96,.26); border-radius: 24px; animation: spin 1.15s linear infinite; }
+.startup-loader .eyebrow { margin: 0; color: var(--accent); }
+.startup-loader h1 { margin: 2px 0 0; font-size: 24px; letter-spacing: -.035em; }
+.startup-loader > p:not(.eyebrow) { min-height: 20px; max-width: 320px; margin: 0; color: var(--muted); font-size: 12px; line-height: 1.65; }
+.startup-loader-progress { width: min(220px, 68vw); height: 3px; margin-top: 14px; overflow: hidden; border-radius: 999px; background: var(--line); }
+.startup-loader-progress i { display: block; width: 42%; height: 100%; border-radius: inherit; background: var(--accent); animation: startup-progress 1.15s ease-in-out infinite; }
+@keyframes startup-progress { 0% { transform: translateX(-110%); } 55% { transform: translateX(92%); } 100% { transform: translateX(245%); } }
 .pairing-screen { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: max(22px, var(--safe-top)) 18px max(22px, var(--safe-bottom)); overflow-y: auto; background: radial-gradient(circle at 50% 10%, var(--glow-a), transparent 34%), var(--pairing-bg-end); }
 .pairing-screen.hidden { display: none; }
 .pairing-card { width: min(100%, 440px); padding: 30px 24px 24px; border: 1px solid var(--line); border-radius: 28px; background: var(--pairing-card-bg); box-shadow: 0 30px 90px var(--panel-shadow); text-align: center; }
@@ -609,7 +635,12 @@ img.brand-mark, img.pairing-logo { object-fit: cover; overflow: hidden; border: 
 .conv-archive { background: #5d6672; }
 .conv-delete { background: #c44940; }
 .conversation-item.actions-open .conv-swipe-content { transform: translateX(-132px); }
-.drawer-empty-state { margin: 28px auto; color: var(--muted-2); font-size: 11px; text-align: center; display: flex; flex-direction: column; align-items: center; gap: 10px; }
+.drawer-empty-state { width: min(100%, 248px); min-height: 150px; margin: 22px auto; padding: 18px 14px; border: 1px dashed var(--line-strong); border-radius: 14px; color: var(--muted); font-size: 11px; text-align: center; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8px; line-height: 1.55; }
+.drawer-empty-state strong { color: var(--ink); font-size: 12px; font-weight: 650; }
+.drawer-empty-state p { margin: 0; color: var(--muted-2); font-size: 10px; }
+.drawer-empty-state-actions { width: 100%; display: flex; flex-direction: column; gap: 6px; margin-top: 3px; }
+.drawer-empty-spinner { width: 18px; height: 18px; border: 2px solid var(--line-strong); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+.drawer-empty-state.error { border-color: rgba(217,59,48,.28); }
 .drawer-empty-state button { border: 1px solid var(--line-strong); border-radius: 8px; background: var(--surface-2); color: var(--ink); padding: 7px 12px; font-size: 10px; cursor: pointer; }
 .drawer-empty-state button:disabled { opacity: .55; cursor: default; }
 .computer-context { display: flex; align-items: center; gap: 10px; padding: 11px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--subtle-bg); }

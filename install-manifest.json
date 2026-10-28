@@ -1,6 +1,6 @@
 {
   "name": "codex-pocket-desktop",
-  "version": "0.6.66",
+  "version": "0.6.67",
   "repository": "tgmax07/pocket-bridge",
   "branch": "main",
   "installerUrl": "https://github.com/tgmax07/pocket-bridge/raw/refs/heads/main/install.ps1",

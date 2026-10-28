@@ -16,6 +16,9 @@ const CACHE_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000;
 
 const elements = {
   appShell: document.getElementById("appShell"),
+  startupLoader: document.getElementById("startupLoader"),
+  startupLoaderTitle: document.getElementById("startupLoaderTitle"),
+  startupLoaderText: document.getElementById("startupLoaderText"),
   pairingScreen: document.getElementById("pairingScreen"),
   pairingForm: document.getElementById("pairingForm"),
   pairingInput: document.getElementById("pairingInput"),
@@ -260,6 +263,10 @@ const state = {
   lastAppBadgeCount: null,
   cacheSaveTimer: null,
   bootstrapRetryTimer: null,
+  startupLoaderTimer: null,
+  computerNamePromptTimer: null,
+  conversationsStatus: "idle",
+  conversationsError: "",
   bootstrapRetrying: false,
   conversationLoadController: null,
   refreshingConversations: false,
@@ -1581,6 +1588,8 @@ function applyBootstrapSnapshot(data) {
   state.config = data;
   state.computer = data.computer || { id: "", name: "这台电脑" };
   state.conversations = (data.conversations || []).map(scopeConversation);
+  state.conversationsStatus = "ready";
+  state.conversationsError = "";
   state.globalUnread = Number.isFinite(Number(data.globalUnread)) ? Math.max(0, Number(data.globalUnread)) : null;
   populateProjects(data);
   updateComputerProfileUi();
@@ -1623,7 +1632,26 @@ async function api(path, options = {}) {
   return data;
 }
 
+function showStartupLoading(title = "正在连接电脑", text = "正在验证配对并同步对话列表…") {
+  clearTimeout(state.startupLoaderTimer);
+  if (!elements.startupLoader) return;
+  elements.startupLoader.hidden = false;
+  elements.startupLoader.classList.remove("done");
+  if (elements.startupLoaderTitle) elements.startupLoaderTitle.textContent = title;
+  if (elements.startupLoaderText) elements.startupLoaderText.textContent = text;
+}
+
+function hideStartupLoading() {
+  if (!elements.startupLoader || elements.startupLoader.hidden) return;
+  elements.startupLoader.classList.add("done");
+  clearTimeout(state.startupLoaderTimer);
+  state.startupLoaderTimer = setTimeout(() => {
+    if (elements.startupLoader?.classList.contains("done")) elements.startupLoader.hidden = true;
+  }, 220);
+}
+
 function showPairing(message = "", revealApp = false) {
+  hideStartupLoading();
   if (!revealApp) {
     elements.pairingScreen.classList.remove("hidden");
   }
@@ -1774,6 +1802,7 @@ function markComputerNamePrompted(computerId) {
 }
 
 function maybePromptFirstName() {
+  clearTimeout(state.computerNamePromptTimer);
   const computer = currentComputer();
   if (!computer.id || !elements.computerNameDialog) return;
   if (computer.customName) {
@@ -1787,12 +1816,15 @@ function maybePromptFirstName() {
   if (prompted || elements.computerNameDialog.open) return;
   elements.firstComputerNameInput.value = "";
   elements.firstComputerNameInput.placeholder = computer.defaultName || "电脑 3EB9";
-  elements.firstComputerNameHelp.textContent = `默认名称：${computer.defaultName || "电脑"}。之后可以在“设置 → 当前电脑”中修改。`;
+  elements.firstComputerNameHelp.textContent = `检测到新电脑。默认名称：${computer.defaultName || "电脑"}，之后可以在“设置 → 当前电脑”中修改。`;
   elements.firstComputerNameStatus.textContent = "";
-  elements.computerNameDialog.showModal();
-  setTimeout(() => elements.firstComputerNameInput.focus(), 100);
+  state.computerNamePromptTimer = setTimeout(() => {
+    if (elements.computerNameDialog.open) return;
+    if (elements.appShell.getAttribute("aria-hidden") === "true") return;
+    elements.computerNameDialog.showModal();
+    setTimeout(() => elements.firstComputerNameInput.focus(), 100);
+  }, 180);
 }
-
 async function saveFirstNameFromPrompt() {
   const name = elements.firstComputerNameInput.value.trim();
   if (!name) {
@@ -2978,18 +3010,50 @@ function renderConversationList() {
   if (!state.conversations.length) {
     const empty = document.createElement("div");
     empty.className = "drawer-empty-state";
-    const copy = document.createElement("span");
-    copy.textContent = "正在加载对话…";
-    const retry = document.createElement("button");
-    retry.type = "button";
-    retry.textContent = "重新加载";
-    retry.addEventListener("click", async () => {
-      retry.disabled = true;
-      try { await refreshConversationsWithRetry(); }
-      catch (error) { showToast(error.message || "加载对话失败"); }
-      finally { retry.disabled = false; }
-    });
-    empty.append(copy, retry);
+    const status = state.conversationsStatus || "idle";
+    if (status === "loading" || status === "idle") {
+      const spinner = document.createElement("span");
+      spinner.className = "drawer-empty-spinner";
+      spinner.setAttribute("aria-hidden", "true");
+      const title = document.createElement("strong");
+      title.textContent = "正在加载对话";
+      const copy = document.createElement("p");
+      copy.textContent = "正在从这台新电脑同步对话列表…";
+      empty.append(spinner, title, copy);
+    } else if (status === "error") {
+      empty.classList.add("error");
+      const title = document.createElement("strong");
+      title.textContent = "对话列表加载失败";
+      const copy = document.createElement("p");
+      copy.textContent = state.conversationsError || "请检查电脑端是否在线后重试。";
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = "重新加载";
+      retry.addEventListener("click", async () => {
+        retry.disabled = true;
+        try { await refreshConversationsWithRetry(); }
+        catch (error) { showToast(error.message || "加载对话失败"); }
+        finally { retry.disabled = false; }
+      });
+      empty.append(title, copy, retry);
+    } else {
+      const title = document.createElement("strong");
+      title.textContent = "这台电脑还没有对话";
+      const copy = document.createElement("p");
+      copy.textContent = "新电脑已经连接成功，可以直接新建对话，或导入电脑上的 Codex 对话。";
+      const actions = document.createElement("div");
+      actions.className = "drawer-empty-state-actions";
+      const create = document.createElement("button");
+      create.type = "button";
+      create.textContent = "新建对话";
+      create.addEventListener("click", () => createConversation().catch((error) => showToast(error.message)));
+      const importButton = document.createElement("button");
+      importButton.type = "button";
+      importButton.textContent = "导入 Codex 对话";
+      importButton.addEventListener("click", openImportDialog);
+      actions.append(create, importButton);
+      empty.append(title, copy, actions);
+    }
     elements.conversationList.append(empty);
     return;
   }
@@ -3401,9 +3465,16 @@ async function selectConversation(id) {
 async function refreshConversations() {
   if (state.refreshingConversations) return state.conversations;
   state.refreshingConversations = true;
+  if (!state.conversations.length) {
+    state.conversationsStatus = "loading";
+    state.conversationsError = "";
+    renderConversationList();
+  }
   try {
     const data = await api("/api/conversations");
     state.conversations = (data.conversations || []).map(scopeConversation);
+    state.conversationsStatus = "ready";
+    state.conversationsError = "";
     state.lastConversationRefreshAt = Date.now();
     writeCachedBootstrap({
       ...(state.config || {}),
@@ -3412,11 +3483,17 @@ async function refreshConversations() {
     });
     renderConversationList();
     return state.conversations;
+  } catch (error) {
+    if (!state.conversations.length) {
+      state.conversationsStatus = "error";
+      state.conversationsError = error.message || "加载对话失败";
+      renderConversationList();
+    }
+    throw error;
   } finally {
     state.refreshingConversations = false;
   }
 }
-
 async function refreshConversationsWithRetry(attempts = 3) {
   let lastError = null;
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -4890,10 +4967,11 @@ async function acceptScannedPairing(value) {
   state.token = candidate;
   localStorage.setItem(TOKEN_KEY, candidate);
   elements.pairingStatus.textContent = "正在连接电脑…";
+  showStartupLoading("正在连接新电脑", "正在验证配对、同步电脑身份和对话列表…");
   try {
-    await bootstrap();
-    await claimPendingThreadLink();
+    await finishInitialConnection();
   } catch (error) {
+    hideStartupLoading();
     if (error.status !== 401) elements.pairingStatus.textContent = "扫码成功，但暂时无法连接电脑。";
   }
 }
@@ -5023,7 +5101,6 @@ async function bootstrap() {
   const data = await api("/api/bootstrap");
   applyBootstrapSnapshot(data);
   writeCachedBootstrap(data);
-  maybePromptFirstName();
   setConnection("online", "在线");
 
   const preferred = localStorage.getItem(ACTIVE_KEY);
@@ -5044,14 +5121,20 @@ async function bootstrap() {
   loadAvailableModels().catch(() => {});
 }
 
+async function finishInitialConnection() {
+  await bootstrap();
+  await claimPendingThreadLink();
+  hideStartupLoading();
+  state.conversationsStatus = state.conversations.length ? "ready" : (state.conversationsStatus || "ready");
+  setTimeout(maybePromptFirstName, 80);
+}
 function scheduleBootstrapRetry(delay = 3000) {
   clearTimeout(state.bootstrapRetryTimer);
   state.bootstrapRetryTimer = setTimeout(async () => {
     if (!state.token || state.bootstrapRetrying) return;
     state.bootstrapRetrying = true;
     try {
-      await bootstrap();
-      await claimPendingThreadLink();
+      await finishInitialConnection();
     } catch (error) {
       if (error.status === 401) return;
       setConnection("", "等待重连");
@@ -5073,11 +5156,12 @@ function bindEvents() {
     state.token = candidate;
     localStorage.setItem(TOKEN_KEY, candidate);
     elements.pairingStatus.textContent = "正在连接电脑…";
+    showStartupLoading("正在连接电脑", "正在验证配对并同步对话列表…");
     try {
-      await bootstrap();
+      await finishInitialConnection();
       elements.pairingInput.value = "";
-      await claimPendingThreadLink();
     } catch (error) {
+      hideStartupLoading();
       if (error.status !== 401) {
         elements.pairingStatus.textContent = "暂时无法连接。请确认电脑端口袋正在运行，并且链接没有过期。";
         setConnection("", "未连接");
@@ -5255,10 +5339,11 @@ async function main() {
     setConnection("", "正在连接");
   }
 
+  showStartupLoading(cachedBootstrap ? "正在恢复连接" : "正在连接电脑", cachedBootstrap ? "已显示手机缓存，正在同步电脑上的最新对话…" : "正在验证配对并同步对话列表…");
   try {
-    await bootstrap();
-    await claimPendingThreadLink();
+    await finishInitialConnection();
   } catch (error) {
+    hideStartupLoading();
     if (error.status !== 401) {
       if (cachedBootstrap) {
         showApp();
