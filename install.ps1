@@ -1,4 +1,4 @@
-﻿[CmdletBinding()]
+[CmdletBinding()]
 param(
   [string]$InstallDir = "$env:LOCALAPPDATA\CodexPocket",
   [string]$WorkDir = "",
@@ -19,7 +19,7 @@ $tempRoot = Join-Path $env:TEMP "codex-pocket-install-$stamp-$([guid]::NewGuid()
 $installFull = [IO.Path]::GetFullPath($InstallDir)
 $localRoot = [IO.Path]::GetFullPath($env:LOCALAPPDATA)
 if (-not $installFull.StartsWith($localRoot, [StringComparison]::OrdinalIgnoreCase) -and -not $PackageRoot) {
-  throw "安装目录必须位于 LOCALAPPDATA 下：$installFull"
+  throw "InstallDir must be under LOCALAPPDATA: $installFull"
 }
 
 function Write-Step([string]$Text) {
@@ -38,7 +38,7 @@ function Invoke-Download([string]$Uri, [string]$OutFile) {
       Start-Sleep -Seconds (2 * $attempt)
     }
   }
-  throw "下载失败：$Uri`n$($lastError.Exception.Message)"
+  throw "Download failed: $Uri`n$($lastError.Exception.Message)"
 }
 
 function Get-NodeVersion([string]$NodeExe) {
@@ -57,21 +57,21 @@ function Ensure-NodeRuntime([string]$TargetRoot) {
     $version = Get-NodeVersion $localNode
     if ($version -and $version.Major -ge 20) { return $localNode }
   }
-  Write-Step "安装便携版 Node.js"
+  Write-Step "Installing portable Node.js"
   $index = Invoke-RestMethod -Uri "https://nodejs.org/dist/index.json" -TimeoutSec 60
   $release = $index | Where-Object { $_.lts } | Select-Object -First 1
-  if (-not $release) { throw "无法读取 Node.js LTS 版本信息" }
+  if (-not $release) { throw "Unable to read Node.js LTS release metadata" }
   $versionText = [string]$release.version
   $archive = Join-Path $tempRoot "node.zip"
   Invoke-Download "https://nodejs.org/dist/$versionText/node-$versionText-win-x64.zip" $archive
   $extract = Join-Path $tempRoot "node-runtime"
   Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
   $nodeSource = Get-ChildItem -LiteralPath $extract -Directory | Select-Object -First 1
-  if (-not $nodeSource) { throw "Node.js 压缩包结构异常" }
+  if (-not $nodeSource) { throw "Unexpected Node.js archive layout" }
   New-Item -ItemType Directory -Force -Path $runtimeDir | Out-Null
   Get-ChildItem -LiteralPath $nodeSource.FullName -Force | Copy-Item -Destination $runtimeDir -Recurse -Force
   $version = Get-NodeVersion $localNode
-  if (-not $version -or $version.Major -lt 20) { throw "Node.js 安装失败" }
+  if (-not $version -or $version.Major -lt 20) { throw "Node.js installation failed" }
   return $localNode
 }
 
@@ -87,21 +87,21 @@ try {
   if ($PackageRoot) {
     $sourceDir = [IO.Path]::GetFullPath($PackageRoot)
     if (-not (Test-Path -LiteralPath (Join-Path $sourceDir "server.mjs"))) {
-      throw "本地安装包不完整：$sourceDir"
+      throw "Local package is incomplete: $sourceDir"
     }
   } else {
-    Write-Step "从 GitHub 下载 Codex Pocket"
+    Write-Step "Downloading desktop bridge from GitHub"
     $archive = Join-Path $tempRoot "source.zip"
     Invoke-Download "https://github.com/$repo/archive/refs/heads/$branch.zip" $archive
     $extract = Join-Path $tempRoot "source"
     Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
     $sourceDir = Get-ChildItem -LiteralPath $extract -Directory | Select-Object -First 1
-    if (-not $sourceDir) { throw "GitHub 源码包结构异常" }
+    if (-not $sourceDir) { throw "Unexpected GitHub source archive layout" }
     $sourceDir = $sourceDir.FullName
   }
 
   $codex = Ensure-Command "codex"
-  if (-not $codex) { throw "未找到 Codex。请先安装并登录 Codex Desktop/CLI。" }
+  if (-not $codex) { throw "Codex was not found. Install and sign in to Codex Desktop/CLI first." }
   if (-not $WorkDir) {
     $cwd = (Get-Location).Path
     if ((Test-Path -LiteralPath (Join-Path $cwd ".git")) -or (Test-Path -LiteralPath (Join-Path $cwd "package.json"))) {
@@ -113,7 +113,7 @@ try {
   $WorkDir = [IO.Path]::GetFullPath($WorkDir)
   New-Item -ItemType Directory -Force -Path $WorkDir | Out-Null
 
-  Write-Step "安装桌面端程序"
+  Write-Step "Installing desktop bridge"
   $exclude = @(".git", ".env", "data", ".tools", ".runtime", ".android-build", ".codex-pocket-build", "dist", "workspace")
   Get-ChildItem -LiteralPath $sourceDir -Force | Where-Object { $exclude -notcontains $_.Name } | ForEach-Object {
     Copy-Item -LiteralPath $_.FullName -Destination $installFull -Recurse -Force
@@ -122,11 +122,11 @@ try {
   $nodeExe = Ensure-NodeRuntime $installFull
   $cloudflared = Join-Path $installFull ".tools\cloudflared.exe"
   if (-not (Test-Path -LiteralPath $cloudflared)) {
-    Write-Step "安装 cloudflared"
+    Write-Step "Installing cloudflared"
     New-Item -ItemType Directory -Force -Path (Split-Path -Parent $cloudflared) | Out-Null
     Invoke-Download "https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-windows-amd64.exe" $cloudflared
     if (-not (Test-Path -LiteralPath $cloudflared) -or (Get-Item -LiteralPath $cloudflared).Length -lt 1000000) {
-      throw "cloudflared 安装失败"
+      throw "cloudflared installation failed"
     }
   }
 
@@ -141,7 +141,7 @@ try {
     ) | Set-Content -Encoding utf8 -LiteralPath $envPath
   }
 
-  Write-Step "安装 Codex Skills"
+  Write-Step "Installing Codex Skills"
   $skillsRoot = Join-Path $env:USERPROFILE ".codex\skills"
   New-Item -ItemType Directory -Force -Path $skillsRoot | Out-Null
   foreach ($skillName in @("codex-pocket-auto-link", "codex-pocket-installer", "codex-pocket-setup")) {
@@ -153,7 +153,7 @@ try {
 
   if (-not $SkipStart) {
     if (-not $NoScheduledTask) {
-      Write-Step "配置 Windows 登录自启动"
+      Write-Step "Configuring Windows logon startup"
       $startScript = Join-Path $installFull "start.ps1"
       $action = New-ScheduledTaskAction -Execute "powershell.exe" -Argument "-NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -File `"$startScript`""
       $trigger = New-ScheduledTaskTrigger -AtLogOn
@@ -168,7 +168,7 @@ try {
     } else {
       Start-Process -FilePath "powershell.exe" -ArgumentList @("-NoProfile", "-ExecutionPolicy", "Bypass", "-WindowStyle", "Hidden", "-File", (Join-Path $installFull "start.ps1")) -WorkingDirectory $installFull -WindowStyle Hidden
     }
-    Write-Step "等待公网地址"
+    Write-Step "Waiting for public endpoint"
     $healthy = $false
     for ($attempt = 0; $attempt -lt 90; $attempt++) {
       try {
@@ -177,7 +177,7 @@ try {
       } catch {}
       Start-Sleep -Seconds 1
     }
-    if (-not $healthy) { throw "Codex Pocket 服务或公网隧道未能启动，请运行 start.cmd 检查日志。" }
+    if (-not $healthy) { throw "The service or public tunnel did not start. Run start.cmd and inspect the logs." }
   }
 
   if (-not $SkipStart) {
@@ -192,7 +192,7 @@ try {
       Write-Host "QR_TITLE=$($qrJson.title)" -ForegroundColor Green
       if ($qrJson.expiresAt) { Write-Host "QR_EXPIRES_AT=$($qrJson.expiresAt)" -ForegroundColor Green }
     } catch {
-      Write-Warning "二维码生成失败：$($_.Exception.Message)"
+      Write-Warning "QR generation failed: $($_.Exception.Message)"
       $pairing = (Get-Content -Raw -LiteralPath $pairingFile).Trim()
       $pairPage = "http://127.0.0.1:$Port/pair.html#pair=$([uri]::EscapeDataString($pairing))"
       Start-Process $pairPage
@@ -201,12 +201,12 @@ try {
   }
 
   Write-Host ""
-  Write-Host "Codex Pocket 安装完成" -ForegroundColor Green
-  Write-Host "安装目录：$installFull"
-  Write-Host "默认项目：$WorkDir"
-  Write-Host "Skills：$skillsRoot"
-  Write-Host "以后登录 Windows 会自动启动 Pocket。"
-  Write-Host "手机扫码后即可连接；如果当前在 Codex 对话中安装，二维码会关联当前对话。"
+  Write-Host "Desktop bridge installation complete" -ForegroundColor Green
+  Write-Host "InstallDir: $installFull"
+  Write-Host "WorkDir: $WorkDir"
+  Write-Host "Skills: $skillsRoot"
+  Write-Host "The bridge starts automatically after Windows sign-in."
+  Write-Host "Scan the QR code on the phone. When run from a Codex thread, the QR links that thread."
 } finally {
   if (Test-Path -LiteralPath $tempRoot) {
     $resolvedTemp = [IO.Path]::GetFullPath($tempRoot)
