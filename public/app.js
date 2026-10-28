@@ -4893,6 +4893,30 @@ async function claimThreadTicket(ticket) {
   return data.conversation;
 }
 
+function persistNativeConnectionUrl() {
+  if (!state.token) return;
+  try {
+    window.CodexPocketNative?.saveConnectionUrl?.(`${location.origin}/#token=${encodeURIComponent(state.token)}`);
+  } catch {}
+}
+
+async function exchangePendingThreadLink() {
+  const ticket = state.pendingThreadTicket;
+  if (!ticket) return null;
+  const response = await fetch(`/api/thread-links/${encodeURIComponent(ticket)}/exchange`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok) throw new ApiError(data.error || "关联二维码已失效，请在电脑端重新生成", response.status);
+  const exchangedToken = String(data.token || "");
+  if (!exchangedToken) throw new ApiError("电脑没有返回有效的配对凭证", 502);
+  state.token = exchangedToken;
+  localStorage.setItem(TOKEN_KEY, exchangedToken);
+  state.pendingThreadTicket = "";
+  persistNativeConnectionUrl();
+  return data.conversation || null;
+}
 async function claimPendingThreadLink() {
   const ticket = state.pendingThreadTicket;
   state.pendingThreadTicket = "";
@@ -4913,9 +4937,6 @@ function migrateScannedPairingOrigin(payload) {
     return false;
   }
   if (!/^https?:$/.test(scanned.protocol) || scanned.origin === window.location.origin) return false;
-  const hash = new URLSearchParams(scanned.hash.replace(/^#/, ""));
-  if (state.token && !hash.has("token")) hash.set("token", state.token);
-  scanned.hash = hash.toString();
   const target = scanned.href;
   try { window.CodexPocketNative?.saveConnectionUrl?.(target); } catch {}
   try { state.eventAbort?.abort(); } catch {}
@@ -4939,19 +4960,20 @@ async function acceptScannedPairing(value) {
   }
   const threadTicket = extractThreadTicket(payload);
   if (threadTicket) {
-    if (!state.token) {
-      elements.scanStatus.textContent = "这是对话关联二维码，请先扫描电脑配对二维码连接。";
-      stopQrScanner();
-      closeScanDialog();
-      return;
-    }
-    elements.scanStatus.textContent = "二维码已识别，正在关联对话…";
+    state.pendingThreadTicket = threadTicket;
+    elements.scanStatus.textContent = "二维码已识别，正在关联电脑对话…";
     stopQrScanner();
     closeScanDialog();
+    showStartupLoading("正在关联电脑对话", "正在验证一次性二维码并获取这台电脑的配对凭证…");
     try {
-      await claimThreadTicket(threadTicket);
+      if (!state.token) await exchangePendingThreadLink();
+      await finishInitialConnection();
     } catch (error) {
-      if (error.status !== 401) showToast(error.message);
+      hideStartupLoading();
+      if (error.status !== 401) {
+        elements.scanStatus.textContent = error.message;
+        showToast(error.message);
+      }
     }
     return;
   }
@@ -4969,6 +4991,7 @@ async function acceptScannedPairing(value) {
   elements.pairingStatus.textContent = "正在连接电脑…";
   showStartupLoading("正在连接新电脑", "正在验证配对、同步电脑身份和对话列表…");
   try {
+    if (!state.token) await exchangePendingThreadLink();
     await finishInitialConnection();
   } catch (error) {
     hideStartupLoading();
@@ -5123,6 +5146,7 @@ async function bootstrap() {
 
 async function finishInitialConnection() {
   await bootstrap();
+  persistNativeConnectionUrl();
   await claimPendingThreadLink();
   hideStartupLoading();
   state.conversationsStatus = state.conversations.length ? "ready" : (state.conversationsStatus || "ready");
@@ -5323,7 +5347,7 @@ async function main() {
     navigator.serviceWorker.register("/sw.js").catch(() => {});
   }
 
-  if (!state.token) {
+  if (!state.token && !state.pendingThreadTicket) {
     showPairing("", true);
     return;
   }
@@ -5339,8 +5363,10 @@ async function main() {
     setConnection("", "正在连接");
   }
 
-  showStartupLoading(cachedBootstrap ? "正在恢复连接" : "正在连接电脑", cachedBootstrap ? "已显示手机缓存，正在同步电脑上的最新对话…" : "正在验证配对并同步对话列表…");
+  const linkingFromQr = !state.token && Boolean(state.pendingThreadTicket);
+  showStartupLoading(linkingFromQr ? "正在关联电脑对话" : (cachedBootstrap ? "正在恢复连接" : "正在连接电脑"), linkingFromQr ? "正在使用一次性二维码换取这台电脑的配对凭证…" : (cachedBootstrap ? "已显示手机缓存，正在同步电脑上的最新对话…" : "正在验证配对并同步对话列表…"));
   try {
+    if (!state.token) await exchangePendingThreadLink();
     await finishInitialConnection();
   } catch (error) {
     hideStartupLoading();
@@ -5350,7 +5376,7 @@ async function main() {
         setConnection("", "等待重连");
         scheduleBootstrapRetry();
       } else {
-        showPairing("暂时无法连接电脑端服务，请稍后重试。", true);
+        showPairing(linkingFromQr ? (error.message || "关联二维码已失效，请在电脑端重新生成") : "暂时无法连接电脑端服务，请稍后重试。", true);
         setConnection("", "未连接");
       }
     }

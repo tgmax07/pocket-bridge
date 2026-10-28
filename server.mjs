@@ -1457,6 +1457,25 @@ export async function startServer(overrides = {}) {
         }
         return;
       }
+      const threadLinkExchangeMatch = pathname.match(/^\/api\/thread-links\/([A-Za-z0-9_-]{32,64})\/exchange$/);
+      if (request.method === "POST" && threadLinkExchangeMatch) {
+        pruneThreadLinkTickets();
+        const ticket = threadLinkExchangeMatch[1];
+        const entry = threadLinkTickets.get(ticket);
+        if (!entry) return sendJson(response, 410, { error: "关联二维码已失效，请在电脑端重新生成" });
+        const conversation = store.get(entry.conversationId);
+        if (!conversation) {
+          threadLinkTickets.delete(ticket);
+          return sendJson(response, 404, { error: "要关联的对话已不存在" });
+        }
+        threadLinkTickets.delete(ticket);
+        return sendJson(response, 200, {
+          linked: true,
+          token,
+          computer,
+          conversation: publicConversation(conversation),
+        });
+      }
       if (pathname.startsWith("/api/")) {
         if (!hasValidToken(request, token)) {
           return sendJson(response, 401, { error: "未配对或配对令牌已失效" });
