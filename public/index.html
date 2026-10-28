@@ -9,13 +9,14 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-title" content="口袋">
+  <meta name="application-name" content="Kodai">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="description" content="从手机远程使用电脑上的 Codex">
+  <meta name="description" content="从手机实时管理电脑上的 AI Agent">
   <title>口袋</title>
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="stylesheet" href="/styles.css?v=0.6.73">
+  <link rel="stylesheet" href="/styles.css?v=0.6.74">
 </head>
 <body>
   <div class="startup-loader" id="startupLoader" role="status" aria-live="polite">
@@ -24,7 +25,7 @@
       <span></span>
     </div>
     <p class="eyebrow">CONNECTING</p>
-    <h1 id="startupLoaderTitle">正在连接电脑</h1>
+    <h1 id="startupLoaderTitle">正在连接 Agent</h1>
     <p id="startupLoaderText">正在验证配对并同步对话列表…</p>
     <div class="startup-loader-progress" aria-hidden="true"><i></i></div>
   </div>
@@ -41,7 +42,7 @@
         </span>
         <div>
           <strong><span id="topbarTitle">聊天</span></strong>
-          <small id="workdirLabel">电脑端 Codex</small>
+          <small id="workdirLabel">Agent Manager</small>
         </div>
       </div>
       <div class="connection" id="connectionBadge" title="连接状态">
@@ -59,9 +60,9 @@
           <img class="empty-logo" src="/icon-192.png" alt="">
           <i></i><i></i><i></i>
         </div>
-        <p class="eyebrow">REMOTE CODEX</p>
-        <h1>电脑在跑，思路不停。</h1>
-        <p class="empty-copy">直接交代任务。Codex 会在电脑上读取文件、执行命令，并把进度实时回传到这里。</p>
+        <p class="eyebrow">REMOTE AGENT</p>
+        <h1>Agent 在跑，思路不停。</h1>
+        <p class="empty-copy">直接交代任务。所选 Agent 会在电脑上读取文件、执行命令，并把进度实时回传到这里。</p>
         <div class="quick-prompts" id="quickPrompts">
           <button type="button" data-prompt="查看当前工作目录，告诉我这里是什么项目">看看当前项目</button>
           <button type="button" data-prompt="检查项目状态，列出最值得优先处理的三件事">检查项目状态</button>
@@ -74,7 +75,7 @@
         <span id="conversationLoadingText">正在加载对话…</span>
       </div>
       <div class="typing-row" id="typingRow" role="status" aria-live="polite" hidden>
-        <span class="message-avatar codex" id="typingAvatar" aria-hidden="true">C</span>
+        <span class="message-avatar codex" id="typingAvatar" aria-hidden="true">K</span>
         <div class="thinking-bubble">
           <span class="typing-dots" aria-hidden="true"><i></i><i></i><i></i></span>
           <span id="typingText">正在思考</span>
@@ -107,7 +108,7 @@
         </button>
         <button class="voice-talk-button" id="voiceTalkButton" type="button" hidden>按住 说话</button>
 
-        <textarea id="messageInput" rows="1" maxlength="60000" placeholder="给电脑上的 Codex 发消息…" enterkeyhint="enter" aria-label="消息内容"></textarea>
+        <textarea id="messageInput" rows="1" maxlength="60000" placeholder="给当前 Agent 发消息…" enterkeyhint="enter" aria-label="消息内容"></textarea>
         <input id="photoInput" type="file" accept="image/*" hidden>
         <input id="cameraInput" type="file" accept="image/*" capture="environment" hidden>
         <input id="videoInput" type="file" accept="video/*" hidden>
@@ -148,7 +149,7 @@
           <button class="attachment-danger" id="stopButton" type="button">停止任务</button>
         </div>
       </div>
-      <p class="composer-hint">任务会在你的电脑上执行 · <span id="sandboxLabel">workspace-write</span></p>
+      <p class="composer-hint">任务会在 Agent 所属电脑上执行 · <span id="sandboxLabel">workspace-write</span></p>
     </form>
   </div>
 
@@ -191,7 +192,7 @@
     <header class="drawer-head">
       <div class="drawer-brand">
         <img class="brand-mark" src="/icon-192.png" alt="">
-        <div><p class="eyebrow">PHONE TO CODEX</p><h2 id="drawerTitle">对话</h2></div>
+        <div><p class="eyebrow">KODAI · AGENT MANAGER</p><h2 id="drawerTitle">对话</h2></div>
       </div>
       <button class="icon-button" id="closeDrawerButton" type="button" aria-label="关闭">×</button>
     </header>
@@ -201,7 +202,7 @@
         <div class="drawer-chat-tools">
           <div class="drawer-quick-actions">
             <button class="new-chat-wide" id="drawerNewChat" type="button"><span aria-hidden="true">＋</span> 新建对话</button>
-            <button class="drawer-scan-button" id="drawerScanButton" type="button" aria-label="扫码关联电脑对话">
+            <button class="drawer-scan-button" id="drawerScanButton" type="button" aria-label="扫码关联 Agent 对话">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 9V5a1 1 0 0 1 1-1h4M15 4h4a1 1 0 0 1 1 1v4M20 15v4a1 1 0 0 1-1 1h-4M9 20H5a1 1 0 0 1-1-1v-4"/><path d="M8 8h3v3H8zM14 8h2M8 14v2M13 13h3v3h-3z"/></svg>
               <span>扫码</span>
             </button>
@@ -216,19 +217,19 @@
 
       <section class="drawer-panel" id="drawerPanelComputers" data-drawer-panel="computers" role="tabpanel" aria-labelledby="drawerTabComputers" hidden>
         <div class="drawer-section-card computer-hub-head">
-          <p class="eyebrow">COMPUTERS</p>
-          <h3>我的电脑</h3>
-          <p class="drawer-help">每台电脑保存自己的公网地址和长期令牌。同一台电脑上的所有手机共用该令牌。</p>
-          <button class="drawer-primary-link" id="addComputerButton" type="button">扫码添加电脑</button>
+          <p class="eyebrow">AGENTS</p>
+          <h3>我的 Agent</h3>
+          <p class="drawer-help">Agent 使用“电脑 ID + Agent 类型”区分。同一台电脑可以同时有一个 Codex 和一个 WorkBuddy；电脑名称仍可自定义。</p>
+          <button class="drawer-primary-link" id="addComputerButton" type="button">扫码添加 Agent</button>
         </div>
         <div class="computer-profile-list" id="computerProfileList" aria-live="polite"></div>
         <p class="computer-profiles-status" id="computerProfilesStatus" role="status"></p>
-        <p class="drawer-help">切换电脑会重新连接该电脑并加载它自己的项目、对话和未读消息。</p>
+        <p class="drawer-help">切换连接会加载对应电脑上的 Agent、项目和对话；电脑名称不会影响 Agent 的唯一身份。</p>
       </section>
       <section class="drawer-panel" id="drawerPanelProjects" data-drawer-panel="projects" role="tabpanel" aria-labelledby="drawerTabProjects" hidden>
         <div class="computer-context">
           <span class="computer-context-mark" aria-hidden="true">PC</span>
-          <div><small>当前连接电脑</small><strong id="projectComputerName">—</strong><span id="projectComputerId"></span></div>
+          <div><small>当前 Agent</small><strong id="projectComputerName">—</strong><span id="projectComputerId"></span></div>
         </div>
         <div class="drawer-section-card">
           <p class="eyebrow">PROJECTS</p>
@@ -238,7 +239,7 @@
           <p class="drawer-help">项目文件直接使用电脑上的原目录，不会复制到手机。</p>
         </div>
         <div class="drawer-section-card">
-          <p class="eyebrow">CODEX DATA</p>
+          <p class="eyebrow">AGENT DATA</p>
           <h3>导入 Desktop 对话</h3>
           <p class="drawer-help">把电脑上的 Codex 线程接入 Pocket，并保持实时同步。</p>
           <button class="drawer-primary-link" id="importButton" type="button">导入 Codex 对话</button>
@@ -247,11 +248,11 @@
 
       <section class="drawer-panel" id="drawerPanelSettings" data-drawer-panel="settings" role="tabpanel" aria-labelledby="drawerTabSettings" hidden>
         <details class="settings-group">
-          <summary><span>模型</span><small id="modelSummary">电脑默认</small></summary>
+          <summary><span>模型</span><small id="modelSummary">Agent 默认</small></summary>
           <div class="settings-group-body model-settings">
             <label for="modelSelect">对话模型</label>
-            <select id="modelSelect"><option value="">跟随电脑默认</option></select>
-            <p id="modelHelp">模型列表来自电脑上的 Codex app-server。</p>
+            <select id="modelSelect"><option value="">跟随 Agent 默认</option></select>
+            <p id="modelHelp">模型列表来自当前 Agent。</p>
             <p class="model-status" id="modelStatus" role="status"></p>
           </div>
         </details>
@@ -265,7 +266,7 @@
               <button class="computer-name-save" id="saveComputerNameButton" type="button">保存名称</button>
               <button class="computer-name-reset" id="resetComputerNameButton" type="button">恢复默认</button>
             </div>
-            <p class="computer-name-help" id="computerNameHelp">默认名称由电脑 ID 后四位生成。</p>
+            <p class="computer-name-help" id="computerNameHelp">电脑名称仅用于显示；Agent 身份始终使用电脑 ID + Agent 类型区分。</p>
             <p class="computer-name-status" id="computerNameStatus" role="status"></p>
           </div>
         </details>
@@ -286,7 +287,7 @@
           <summary><span>通知</span><small id="notificationSummary">后台完成提醒</small></summary>
           <div class="settings-group-body notification-settings">
             <label class="notification-toggle"><span><strong>允许通知</strong><small>退到后台时提醒</small></span><input id="notificationsEnabled" type="checkbox" checked></label>
-            <label class="notification-toggle"><span><strong>任务完成</strong><small>Codex 回复完成后通知</small></span><input id="notifyCompletion" type="checkbox" checked></label>
+            <label class="notification-toggle"><span><strong>任务完成</strong><small>Agent 回复完成后通知</small></span><input id="notifyCompletion" type="checkbox" checked></label>
             <label class="notification-toggle"><span><strong>权限审核</strong><small>需要你确认时提醒</small></span><input id="notifyApproval" type="checkbox" checked></label>
             <p class="notification-help">Android 可能显示一条低优先级的后台连接通知，以维持及时提醒。</p>
             <p class="notification-status" id="notificationStatus" role="status"></p>
@@ -298,10 +299,10 @@
           <div class="settings-group-body">
             <div class="identity-settings">
               <div class="identity-row">
-                <button class="avatar-preview codex" id="codexAvatarPreview" type="button" aria-label="更换 Codex 头像" title="点击更换 Codex 头像">C</button>
+                <button class="avatar-preview codex" id="codexAvatarPreview" type="button" aria-label="更换 Agent 头像" title="点击更换 Agent 头像">K</button>
                 <div class="identity-fields">
-                  <label for="codexNameInput">Codex 名字</label>
-                  <input id="codexNameInput" type="text" maxlength="20" inputmode="text" enterkeyhint="done" autocapitalize="off" autocomplete="off" placeholder="Codex">
+                  <label for="codexNameInput">Agent 名字</label>
+                  <input id="codexNameInput" type="text" maxlength="20" inputmode="text" enterkeyhint="done" autocapitalize="off" autocomplete="off" placeholder="Kodai">
                   <span class="avatar-edit-hint">点击头像更换</span>
                   <input id="codexAvatarFile" type="file" accept="image/*" hidden>
                 </div>
@@ -327,7 +328,7 @@
           <span><strong>连接与安全</strong><small>令牌、项目与执行通道</small></span>
           <span aria-hidden="true">›</span>
         </button>
-        <div class="drawer-meta"><span>口袋</span><span id="drawerVersion">v0.6.73</span></div>
+        <div class="drawer-meta"><span>口袋</span><span id="drawerVersion">v0.6.74</span></div>
       </section>
 
       <section class="drawer-panel" id="drawerPanelFiles" data-drawer-panel="files" role="tabpanel" aria-labelledby="drawerTabFiles" hidden>
@@ -345,7 +346,7 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5.5h14v10H9l-4 3v-13Z"/><path d="M8.5 9h7M8.5 12h4.5"/></svg><span>对话</span>
       </button>
       <button type="button" id="drawerTabComputers" data-drawer-tab="computers" role="tab" aria-controls="drawerPanelComputers" aria-selected="false">
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg><span>电脑</span>
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="7" r="3"/><path d="M6.5 20v-2.5A5.5 5.5 0 0 1 12 12a5.5 5.5 0 0 1 5.5 5.5V20M4 5.5 7.2 7M20 5.5 16.8 7"/></svg><span>Agent</span>
       </button>      <button type="button" id="drawerTabProjects" data-drawer-tab="projects" role="tab" aria-controls="drawerPanelProjects" aria-selected="false">
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3.5 7.5h6l1.8 2h9.2v9H3.5v-11Z"/><path d="M3.5 7.5v-2h5l1.5 2"/></svg><span>项目</span>
       </button>
@@ -361,19 +362,19 @@
     <div class="pairing-card">
       <img class="pairing-logo" src="/icon-192.png" alt="口袋">
       <p class="eyebrow">口袋</p>
-      <h1>连接你的电脑</h1>
+      <h1>连接你的 Agent</h1>
       <p>粘贴电脑端生成的配对链接，或输入配对令牌。令牌只保存在这台手机和你的电脑上。</p>
       <form id="pairingForm">
         <label for="pairingInput">配对链接或令牌</label>
         <input id="pairingInput" type="text" autocomplete="off" spellcheck="false" placeholder="https://…/#token=…">
-        <button type="submit">连接 Codex</button>
-        <button class="scan-button" id="scanButton" type="button">扫码连接电脑</button>
+        <button type="submit">连接 Agent</button>
+        <button class="scan-button" id="scanButton" type="button">扫码连接 Agent</button>
       </form>
       <p class="pairing-status" id="pairingStatus" role="status"></p>
       <div class="pairing-help">
         <strong>安卓安装</strong>
         <span>连接成功后，在 Chrome 菜单中选择“添加到主屏幕”。</span>
-        <a class="apk-download" id="downloadApkLink" href="/downloads/codex-pocket-v0.6.73.apk" download="codex-pocket-v0.6.73.apk">下载安卓 APK v0.6.73</a>
+        <a class="apk-download" id="downloadApkLink" href="/downloads/codex-pocket-v0.6.74.apk" download="codex-pocket-v0.6.74.apk">下载安卓 APK v0.6.74</a>
       </div>
     </div>
   </section>
@@ -413,6 +414,7 @@
     </div>
     <dl class="info-grid">
       <dt>当前电脑</dt><dd id="infoComputerName">—</dd>
+      <dt>当前 Agent</dt><dd id="infoAgentIdentity">—</dd>
       <dt>电脑标识</dt><dd id="infoComputerId">—</dd>
       <dt>当前项目</dt><dd id="infoWorkdir">—</dd>
       <dt>可用项目</dt><dd id="infoProjects">—</dd>
@@ -425,7 +427,7 @@
       <button id="copyPairingButton" type="button">复制本机配对链接</button>
       <button id="forgetButton" class="danger-quiet" type="button">从此手机移除令牌</button>
     </div>
-    <p class="security-note">配对链接等同密码，请勿转发给他人。公网隧道只转发到电脑本机，Codex 仍受工作目录与沙箱限制。</p>
+    <p class="security-note">配对链接等同密码，请勿转发给他人。公网隧道只转发到电脑本机，所连接的 Agent 仍受工作目录与沙箱限制。</p>
   </dialog>
 
   <dialog class="info-dialog import-dialog" id="importDialog">
@@ -459,10 +461,10 @@
 
   <dialog class="info-dialog approval-alert-dialog" id="approvalAlertDialog" aria-labelledby="approvalAlertTitle">
     <div class="dialog-head">
-      <div><p class="eyebrow">APPROVAL REQUIRED</p><h2 id="approvalAlertTitle">Codex 需要你确认</h2></div>
+      <div><p class="eyebrow">APPROVAL REQUIRED</p><h2 id="approvalAlertTitle">Agent 需要你确认</h2></div>
       <button class="icon-button" id="dismissApprovalAlertButton" type="button" aria-label="稍后处理">×</button>
     </div>
-    <p class="approval-alert-copy" id="approvalAlertText">电脑上的 Codex 正在等待权限审核。</p>
+    <p class="approval-alert-copy" id="approvalAlertText">电脑上的 Agent 正在等待权限审核。</p>
     <div class="dialog-actions">
       <button class="computer-name-primary" id="openApprovalAlertButton" type="button">去处理</button>
       <button id="laterApprovalAlertButton" type="button">稍后</button>
@@ -474,7 +476,7 @@
       <div><p class="eyebrow">STEER CURRENT TURN</p><h2>引导当前任务？</h2></div>
       <button class="icon-button" id="closeSteerButton" type="button" aria-label="关闭">×</button>
     </div>
-    <p class="steer-copy">当前 Codex 正在思考。选择“引导当前任务”会把这条排队消息立即送入当前回合；选择“继续排队”则等当前任务结束后再发送。</p>
+    <p class="steer-copy">当前 Agent 正在思考。选择“引导当前任务”会把这条排队消息立即送入当前回合；选择“继续排队”则等当前任务结束后再发送。</p>
     <blockquote class="steer-preview" id="steerPreview"></blockquote>
     <p class="steer-status" id="steerStatus" role="status" hidden></p>
     <div class="dialog-actions">
@@ -498,7 +500,7 @@
 
   <script src="/vendor/jsQR.js"></script>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=0.6.73"></script>
+  <script type="module" src="/app.js?v=0.6.74"></script>
 </body>
 </html>
 

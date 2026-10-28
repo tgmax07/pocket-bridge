@@ -1,9 +1,9 @@
 {
   "name": "codex-pocket",
-  "version": "0.6.73",
+  "version": "0.6.74",
   "private": true,
   "type": "module",
-  "description": "A phone-first PWA for talking to Codex running on your computer.",
+  "description": "A phone-first Agent Manager for AI agents running on your computer.",
   "scripts": {
     "start": "node scripts/start.mjs",
     "start:local": "node scripts/start.mjs --local",

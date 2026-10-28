@@ -1,10 +1,10 @@
-const CACHE_NAME = "codex-pocket-v0.6.73";
+const CACHE_NAME = "codex-pocket-v0.6.74";
 const APP_SHELL = [
   "/",
   "/index.html",
-  "/styles.css?v=0.6.73",
-  "/theme-init.js?v=0.6.73",
-  "/app.js?v=0.6.73",
+  "/styles.css?v=0.6.74",
+  "/theme-init.js?v=0.6.74",
+  "/app.js?v=0.6.74",
   "/manifest.webmanifest",
   "/icon.svg",
   "/icon-192.png",

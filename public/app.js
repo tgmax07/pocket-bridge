@@ -8,6 +8,7 @@ const NOTIFICATION_KEY = "codex-pocket-notification-settings";
 const DOWNLOAD_HISTORY_KEY = "codex-pocket-download-history";
 const CONVERSATION_FILES_KEY = "codex-pocket-conversation-files";
 const MODEL_KEY = "codex-pocket-model";
+const AGENT_KEY = "codex-pocket-agent";
 const APPROVAL_KEY = "codex-pocket-approval-policy";
 const BOOTSTRAP_CACHE_KEY = "codex-pocket-bootstrap-cache-v1";
 const CONVERSATION_CACHE_PREFIX = "codex-pocket-conversation-cache-v1:";
@@ -124,6 +125,7 @@ const elements = {
   closeInfoButton: document.getElementById("closeInfoButton"),
   infoComputerName: document.getElementById("infoComputerName"),
   infoComputerId: document.getElementById("infoComputerId"),
+  infoAgentIdentity: document.getElementById("infoAgentIdentity"),
   projectComputerName: document.getElementById("projectComputerName"),
   projectComputerId: document.getElementById("projectComputerId"),
   computerNameSummary: document.getElementById("computerNameSummary"),
@@ -264,7 +266,7 @@ const state = {
   drawerTab: "chats",
   searchQuery: "",
   pendingThreadTicket: "",
-  identity: { codexName: "Codex", userName: "我", codexAvatar: "", userAvatar: "" },
+  identity: { codexName: "Kodai", userName: "我", codexAvatar: "", userAvatar: "" },
   avatarCrop: null,
   notifications: { enabled: true, completion: true, approval: true },
   globalUnread: null,
@@ -359,13 +361,13 @@ function renderAvatarPreview(role) {
   } else if (role === "user") {
     preview.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 19c.7-3.5 3-5.4 6.5-5.4s5.8 1.9 6.5 5.4"/></svg>';
   } else {
-    preview.textContent = "C";
+    preview.textContent = String(state.identity.codexName || "Kodai").trim().charAt(0).toUpperCase() || "K";
   }
 }
 
 function updateIdentityTextLabels() {
   const userName = normalizeDisplayName(state.identity.userName, "我");
-  const codexName = normalizeDisplayName(state.identity.codexName, "Codex");
+  const codexName = normalizeDisplayName(state.identity.codexName, "Kodai");
   document.querySelectorAll('.message.user .message-label').forEach((label) => {
     label.textContent = userName;
   });
@@ -376,7 +378,7 @@ function updateIdentityTextLabels() {
 }
 
 function commitIdentityNames() {
-  state.identity.codexName = normalizeDisplayName(elements.codexNameInput.value, "Codex");
+  state.identity.codexName = normalizeDisplayName(elements.codexNameInput.value, "Kodai");
   state.identity.userName = normalizeDisplayName(elements.userNameInput.value, "我");
   saveIdentity();
   refreshIdentityUi({ rerender: true });
@@ -468,7 +470,7 @@ function openAvatarCrop(file, role) {
     offsetX: 0,
     offsetY: 0,
   };
-  elements.avatarCropTitle.textContent = role === "user" ? "选择我的头像区域" : "选择 Codex 头像区域";
+  elements.avatarCropTitle.textContent = role === "user" ? "选择我的头像区域" : "选择 Agent 头像区域";
   elements.avatarCropZoom.value = "1";
   elements.avatarCropInfo.textContent = file.size > 8 * 1024 * 1024
     ? "原图超过 8 MB，保存时会自动压缩。拖动图片选择显示区域。"
@@ -533,12 +535,12 @@ function saveAvatarCrop() {
 }
 
 function setupIdentity() {
-  const defaults = { codexName: "Codex", userName: "我", codexAvatar: "", userAvatar: "" };
+  const defaults = { codexName: "Kodai", userName: "我", codexAvatar: "", userAvatar: "" };
   try {
     const saved = JSON.parse(localStorage.getItem(IDENTITY_KEY) || "null");
     if (saved && typeof saved === "object") {
       state.identity = {
-        codexName: normalizeDisplayName(saved.codexName, defaults.codexName),
+        codexName: normalizeDisplayName(saved.codexName === "Codex" ? defaults.codexName : saved.codexName, defaults.codexName),
         userName: normalizeDisplayName(saved.userName, defaults.userName),
         codexAvatar: typeof saved.codexAvatar === "string" ? saved.codexAvatar : "",
         userAvatar: typeof saved.userAvatar === "string" ? saved.userAvatar : "",
@@ -1258,7 +1260,7 @@ function composerAgentId() {
 }
 
 function currentModelDisplayName() {
-  if (!state.selectedModel) return composerAgentId() === "workbuddy" ? "WorkBuddy 默认" : "电脑默认";
+  if (!state.selectedModel) return `${agentNameById(composerAgentId())} 默认`;
   return state.models.find((model) => model.id === state.selectedModel)?.displayName || state.selectedModel;
 }
 
@@ -1284,7 +1286,7 @@ function setSelectedModel(value, { notify = false } = {}) {
 function renderQuickModelOptions() {
   if (!elements.quickModelOptions) return;
   elements.quickModelOptions.innerHTML = "";
-  const choices = [{ id: "", displayName: composerAgentId() === "workbuddy" ? "WorkBuddy 默认" : "电脑默认", isDefault: false }, ...state.models];
+  const choices = [{ id: "", displayName: `${agentNameById(composerAgentId())} 默认`, isDefault: false }, ...state.models];
   for (const model of choices) {
     const button = document.createElement("button");
     button.type = "button";
@@ -1325,7 +1327,7 @@ async function loadAvailableModels({ force = false } = {}) {
       elements.modelSelect.innerHTML = "";
       const fallback = document.createElement("option");
       fallback.value = "";
-      fallback.textContent = requestAgentId === "workbuddy" ? "跟随 WorkBuddy 默认" : "跟随电脑默认";
+      fallback.textContent = `跟随 ${agentNameById(requestAgentId)} 默认`;
       elements.modelSelect.append(fallback);
       for (const model of state.models) {
         const option = document.createElement("option");
@@ -1626,7 +1628,7 @@ function applyBootstrapSnapshot(data) {
   populateAgents(data);
   populateProjects(data);
   updateComputerProfileUi();
-  elements.workdirLabel.textContent = computerContextLabel(data.workdirName || "Codex");
+  elements.workdirLabel.textContent = computerContextLabel(data.workdirName || "Agent Manager");
   elements.sandboxLabel.textContent = data.sandbox || "workspace-write";
   elements.drawerVersion.textContent = data.version ? `v${data.version}` : "缓存";
   renderConversationList();
@@ -1712,6 +1714,39 @@ function currentComputer() {
   return state.computer || state.config?.computer || { id: "", name: "这台电脑" };
 }
 
+function shortComputerId(computerOrId = currentComputer()) {
+  const value = typeof computerOrId === "string" ? computerOrId : computerOrId?.id || "";
+  return String(value).replace(/-/g, "").slice(0, 8).toUpperCase() || "未识别";
+}
+
+function agentPreferenceStorageKey(computerId = currentComputer().id) {
+  return `${AGENT_KEY}:${computerId || "default"}`;
+}
+
+function readPreferredAgentId(computerId = currentComputer().id) {
+  try {
+    return localStorage.getItem(agentPreferenceStorageKey(computerId))
+      || localStorage.getItem(AGENT_KEY)
+      || "codex";
+  } catch {
+    return "codex";
+  }
+}
+
+function savePreferredAgentId(agentId, computerId = currentComputer().id) {
+  try {
+    localStorage.setItem(agentPreferenceStorageKey(computerId), agentId);
+    localStorage.setItem(AGENT_KEY, agentId);
+  } catch {}
+}
+
+function agentIdentityLabel(agentId = composerAgentId(), { projectName = "", computer = currentComputer(), includeComputerName = true } = {}) {
+  const parts = [agentNameById(agentId), `ID ${shortComputerId(computer)}`];
+  if (includeComputerName) parts.push(computer.name || "未命名电脑");
+  if (projectName) parts.push(projectName);
+  return parts.join(" · ");
+}
+
 function scopeConversation(conversation) {
   if (!conversation) return conversation;
   const computer = currentComputer();
@@ -1723,28 +1758,32 @@ function scopeConversation(conversation) {
 }
 
 function computerContextLabel(projectName = "") {
-  const name = currentComputer().name || "这台电脑";
-  return projectName ? `${name} · ${projectName}` : name;
+  return agentIdentityLabel(composerAgentId(), { projectName });
 }
 
 function updateComputerProfileUi() {
   const computer = currentComputer();
-  const shortId = computer.id ? `ID ${computer.id.slice(0, 8)}` : "";
+  const activeAgentId = state.active?.agentId || composerAgentId();
+  const activeAgentName = agentNameById(activeAgentId);
+  const shortId = `ID ${shortComputerId(computer)}`;
   for (const element of [elements.projectComputerName, elements.infoComputerName]) {
-    if (element) element.textContent = computer.name || "这台电脑";
+    if (element) element.textContent = element === elements.projectComputerName
+      ? `${activeAgentName} · ${computer.name || "这台电脑"}`
+      : computer.name || "这台电脑";
   }
   for (const element of [elements.projectComputerId, elements.infoComputerId]) {
     if (!element) continue;
     element.textContent = computer.id || "";
     element.title = computer.id ? `电脑标识：${computer.id}` : "";
   }
-  if (elements.projectComputerId) elements.projectComputerId.textContent = shortId;
+  if (elements.projectComputerId) elements.projectComputerId.textContent = `电脑 ${shortId} · Agent ${activeAgentName}`;
+  if (elements.infoAgentIdentity) elements.infoAgentIdentity.textContent = agentIdentityLabel(activeAgentId, { computer });
   if (elements.computerNameSummary) elements.computerNameSummary.textContent = computer.name || "电脑";
   if (elements.computerNameInput && document.activeElement !== elements.computerNameInput) {
     elements.computerNameInput.value = computer.customName || "";
   }
   if (elements.computerNameInput) elements.computerNameInput.placeholder = computer.defaultName || "电脑 3EB9";
-  if (elements.computerNameHelp) elements.computerNameHelp.textContent = `默认名称：${computer.defaultName || "电脑"}`;
+  if (elements.computerNameHelp) elements.computerNameHelp.textContent = `默认名称：${computer.defaultName || "电脑"}。Agent 身份仍使用电脑 ID + Agent 类型。`;
 }
 
 function normalizeComputerProfile(profile) {
@@ -1791,16 +1830,16 @@ function renderComputerProfiles() {
   if (!elements.computerProfileList) return;
   const activeComputer = currentComputer();
   const profiles = state.computerProfiles
-    .map((profile) => ({ ...profile, active: profile.id === activeComputer.id || profile.active }))
+    .map((profile) => ({ ...profile, active: activeComputer.id ? profile.id === activeComputer.id : profile.active }))
     .sort((left, right) => Number(right.active) - Number(left.active) || right.lastConnectedAt - left.lastConnectedAt);
   elements.computerProfileList.innerHTML = "";
   if (!profiles.length) {
     const empty = document.createElement("div");
     empty.className = "drawer-empty-state";
     const title = document.createElement("strong");
-    title.textContent = "还没有保存的电脑";
+    title.textContent = "还没有保存的 Agent";
     const copy = document.createElement("p");
-    copy.textContent = "扫描电脑端二维码即可添加。安卓版支持在多个已保存电脑之间切换。";
+    copy.textContent = "扫描电脑端二维码即可添加。同一台电脑上的 Codex、WorkBuddy 会按 Agent 类型区分。";
     empty.append(title, copy);
     elements.computerProfileList.append(empty);
     return;
@@ -1808,34 +1847,59 @@ function renderComputerProfiles() {
   const bridge = window.CodexPocketNative;
   const canSwitch = bridge && typeof bridge.switchComputerConnection === "function";
   const canDelete = bridge && typeof bridge.deleteComputerConnection === "function";
+  const activeAgentId = state.active?.agentId || state.selectedAgentId || "codex";
+  const activeAgentName = agentNameById(activeAgentId);
   for (const profile of profiles) {
     const card = document.createElement("article");
     card.className = "computer-profile-card";
     if (profile.active) card.classList.add("active");
     const mark = document.createElement("span");
     mark.className = "computer-profile-mark";
-    mark.textContent = String(profile.id).replace(/[^0-9a-f]/gi, "").slice(-4).toUpperCase() || "PC";
+    mark.textContent = profile.active
+      ? (activeAgentId === "workbuddy" ? "WB" : "CX")
+      : shortComputerId(profile.id).slice(-4);
     const copy = document.createElement("div");
     copy.className = "computer-profile-copy";
     const name = document.createElement("strong");
-    name.textContent = profile.name;
+    name.textContent = profile.active ? `${activeAgentName} · ${profile.name}` : profile.name;
     const host = document.createElement("small");
-    try { host.textContent = new URL(profile.url).hostname; } catch { host.textContent = "连接地址不可用"; }
+    try { host.textContent = `电脑 ID ${shortComputerId(profile.id)} · ${new URL(profile.url).hostname}`; } catch { host.textContent = `电脑 ID ${shortComputerId(profile.id)} · 连接地址不可用`; }
     copy.append(name, host);
     if (profile.active) {
       const current = document.createElement("span");
       current.className = "computer-profile-current";
-      current.textContent = "当前电脑";
+      current.textContent = `当前对话 Agent：${activeAgentName}`;
       copy.append(current);
     }
     card.append(mark, copy);
+    if (profile.active) {
+      const agents = document.createElement("div");
+      agents.className = "agent-profile-options";
+      agents.setAttribute("aria-label", "选择新对话 Agent");
+      const caption = document.createElement("span");
+      caption.className = "agent-profile-caption";
+      caption.textContent = "新对话 Agent";
+      agents.append(caption);
+      for (const agent of state.agents) {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "agent-profile-option";
+        button.classList.toggle("active", agent.id === state.selectedAgentId);
+        button.disabled = !agent.available;
+        button.textContent = `${agent.name || agent.id} · ${shortComputerId(profile.id)}${agent.available ? "" : "（未运行）"}`;
+        button.title = `新对话使用 ${agent.name || agent.id} · 电脑 ID ${shortComputerId(profile.id)}`;
+        button.addEventListener("click", () => applyAgentSelection(agent.id));
+        agents.append(button);
+      }
+      card.append(agents);
+    }
     if (canSwitch || canDelete) {
       const actions = document.createElement("div");
       actions.className = "computer-profile-actions";
       const switchButton = document.createElement("button");
       switchButton.type = "button";
       switchButton.className = "computer-profile-switch";
-      switchButton.textContent = profile.active ? "已连接" : "切换";
+      switchButton.textContent = profile.active ? "已连接" : "切换连接";
       switchButton.disabled = profile.active || !canSwitch;
       switchButton.addEventListener("click", () => switchComputerProfile(profile));
       actions.append(switchButton);
@@ -1856,10 +1920,10 @@ function renderComputerProfiles() {
 function switchComputerProfile(profile) {
   const bridge = window.CodexPocketNative;
   if (!bridge || typeof bridge.switchComputerConnection !== "function") {
-    if (elements.computerProfilesStatus) elements.computerProfilesStatus.textContent = "浏览器版只能连接当前电脑";
+    if (elements.computerProfilesStatus) elements.computerProfilesStatus.textContent = "浏览器版只能连接当前 Agent";
     return;
   }
-  if (elements.computerProfilesStatus) elements.computerProfilesStatus.textContent = "正在切换电脑…";
+  if (elements.computerProfilesStatus) elements.computerProfilesStatus.textContent = "正在切换 Agent 连接…";
   let switched = false;
   try { switched = bridge.switchComputerConnection(profile.id); } catch {}
   if (!switched && elements.computerProfilesStatus) {
@@ -1868,8 +1932,8 @@ function switchComputerProfile(profile) {
 }
 
 function deleteComputerProfile(profile) {
-  const label = profile.name || "这台电脑";
-  if (!confirm(`从手机删除“${label}”的连接？\n\n不会删除电脑上的 Codex 数据。`)) return;
+  const label = `${profile.name || "这台电脑"}（电脑 ID ${shortComputerId(profile.id)}）`;
+  if (!confirm(`从手机删除“${label}”的 Agent 连接？\n\n不会删除电脑上的 Codex 或 WorkBuddy 数据。`)) return;
   const bridge = window.CodexPocketNative;
   if (!bridge || typeof bridge.deleteComputerConnection !== "function") return;
   let removed = false;
@@ -1909,7 +1973,7 @@ function applyComputerProfileUpdate(computer) {
   refreshComputerProfiles();
   const projectName = state.active?.workdir
     ? projectBaseName(state.active.workdir)
-    : (state.config?.workdirName || "Codex");
+    : (state.config?.workdirName || "Agent Manager");
   elements.workdirLabel.textContent = computerContextLabel(projectName);
 }
 
@@ -2044,11 +2108,31 @@ function agentNameById(agentId) {
   return agent?.name || (agentId === "workbuddy" ? "WorkBuddy" : "Codex");
 }
 
+function applyAgentSelection(agentId, { notify = true } = {}) {
+  const agent = state.agents.find((item) => item.id === agentId);
+  if (!agent || !agent.available) {
+    showToast("这个 Agent 当前未运行");
+    return false;
+  }
+  state.selectedAgentId = agent.id;
+  savePreferredAgentId(agent.id);
+  if (elements.agentSelect) elements.agentSelect.value = agent.id;
+  if (!state.active || state.active.agentId === agent.id) {
+    state.models = [];
+    state.selectedModel = "";
+    updateModelUi();
+    loadAvailableModels({ force: true }).catch(() => {});
+  }
+  updateComputerProfileUi();
+  renderComputerProfiles();
+  if (notify) showToast(`新对话 Agent：${agentNameById(agent.id)} · ${shortComputerId()}`);
+  return true;
+}
+
 function populateAgents(config) {
   const previousAgents = state.agents;
   state.agents = Array.isArray(config.agents) ? config.agents : [{ id: "codex", name: "Codex", available: true }];
-  let saved = "codex";
-  try { saved = localStorage.getItem("codex-pocket-agent") || "codex"; } catch {}
+  const saved = readPreferredAgentId();
   const preferred = (previousAgents.length ? state.agents.find((agent) => agent.id === state.selectedAgentId && agent.available) : null)
     || state.agents.find((agent) => agent.id === saved && agent.available)
     || state.agents.find((agent) => agent.available)
@@ -2059,7 +2143,7 @@ function populateAgents(config) {
     for (const agent of state.agents) {
       const option = document.createElement("option");
       option.value = agent.id;
-      option.textContent = `${agent.name || agent.id}${agent.available ? "" : "（未运行）"}`;
+      option.textContent = `${agent.name || agent.id} · ${shortComputerId()}${agent.available ? "" : "（未运行）"}`;
       option.disabled = !agent.available;
       elements.agentSelect.append(option);
     }
@@ -2080,6 +2164,8 @@ async function refreshAgentAvailability() {
       updateModelUi();
       await loadAvailableModels();
     }
+    updateComputerProfileUi();
+    renderComputerProfiles();
   } catch {}
 }
 
@@ -2265,7 +2351,7 @@ function fillAvatarContent(avatar, isUser) {
   } else if (isUser) {
     avatar.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="3.4"/><path d="M5.5 19c.7-3.5 3-5.4 6.5-5.4s5.8 1.9 6.5 5.4"/></svg>';
   } else {
-    avatar.textContent = "C";
+    avatar.textContent = String(state.identity.codexName || "Kodai").trim().charAt(0).toUpperCase() || "K";
   }
 }
 
@@ -2286,7 +2372,7 @@ async function recallMessage(seq) {
   if (!event || !state.active?.id) return;
   const warning = event.delivery === "queued" || event.delivery === "desktop-queued"
     ? "撤回这条排队消息？它会从等待队列中移除。"
-    : "撤回这条消息？Codex 会回退到发送前的对话版本，并在电脑端留下撤回记录。当前回合之后的回复也会被移除。";
+    : "撤回这条消息？当前 Agent 会回退到发送前的对话版本，并在电脑端留下撤回记录。当前回合之后的回复也会被移除。";
   if (!confirm(warning)) return;
   try {
     const data = await api(`/api/conversations/${state.active.id}/messages/${seq}/recall`, { method: "POST" });
@@ -2309,7 +2395,7 @@ function createRecallEvent(event) {
 function showApprovalAlert(message) {
   state.approvalAlertConversationId = String(message?.conversationId || "");
   if (elements.approvalAlertText) {
-    elements.approvalAlertText.textContent = message?.text || message?.title || "电脑上的 Codex 正在等待权限审核。";
+    elements.approvalAlertText.textContent = message?.text || message?.title || "电脑上的 Agent 正在等待权限审核。";
   }
   if (elements.approvalAlertDialog && !elements.approvalAlertDialog.open) {
     elements.approvalAlertDialog.showModal();
@@ -3000,7 +3086,7 @@ function createApprovalEvent(event) {
   const title = document.createElement("strong");
   title.textContent = event.title || "需要权限确认";
   const description = document.createElement("p");
-  description.textContent = event.text || "Codex 需要你的确认才能继续。";
+  description.textContent = event.text || "Agent 需要你的确认才能继续。";
   copy.append(title, description);
   head.append(mark, copy);
   card.append(head);
@@ -3218,7 +3304,7 @@ async function archiveConversation(conversation) {
     } else {
       renderConversationList();
     }
-    showToast(data.shared ? "对话已归档并同步到 Codex" : "对话已从 Pocket 归档");
+    showToast(data.shared ? "对话已归档并同步到电脑端 Agent" : "对话已从 Pocket 归档");
   } catch (error) {
     if (error.status !== 401) showToast(error.message);
   }
@@ -3311,7 +3397,8 @@ function renderConversationList() {
     const meta = document.createElement("small");
     const dateLabel = new Intl.DateTimeFormat("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(conversation.updatedAt));
     const computerName = conversation.computerName || currentComputer().name || "这台电脑";
-    meta.textContent = `${agentNameById(conversation.agentId)} · ${computerName} · ${projectBaseName(conversation.workdir) || "workspace"} · ${dateLabel}${conversation.sourceCodexSessionId ? " · 实时同步" : ""}`;
+    const computerId = conversation.computerId || currentComputer().id || "";
+    meta.textContent = `${agentNameById(conversation.agentId)} · ID ${shortComputerId(computerId)} · ${computerName} · ${projectBaseName(conversation.workdir) || "workspace"} · ${dateLabel}${conversation.sourceCodexSessionId ? " · 实时同步" : ""}`;
     main.append(title, meta);
     select.append(main);
     if (unreadCount > 0) {
@@ -3619,14 +3706,16 @@ function updateTopbarTitle(conversation = state.active) {
 function resetConversationView(conversation) {
   state.active = conversation;
   const activeAgentId = conversation?.agentId || "codex";
-  try { localStorage.setItem("codex-pocket-agent", activeAgentId); } catch {}
+  savePreferredAgentId(activeAgentId);
   if (state.selectedAgentId !== activeAgentId || state.modelsAgentId !== activeAgentId) {
     state.selectedAgentId = activeAgentId;
     if (elements.agentSelect) elements.agentSelect.value = activeAgentId;
     loadAvailableModels({ force: true }).catch(() => {});
   }
   updateTopbarTitle(conversation);
-  elements.workdirLabel.textContent = computerContextLabel(conversation?.workdir ? projectBaseName(conversation.workdir) : (state.config?.workdirName || "Codex"));
+  updateComputerProfileUi();
+  renderComputerProfiles();
+  elements.workdirLabel.textContent = computerContextLabel(conversation?.workdir ? projectBaseName(conversation.workdir) : (state.config?.workdirName || "Agent Manager"));
   state.events = new Map();
   state.lastSeq = 0;
   setQueuedMessages(conversation?.queuedMessages || []);
@@ -3761,7 +3850,7 @@ async function createConversation() {
 }
 
 async function deleteConversation(conversation) {
-  if (!confirm(`永久删除“${conversation.title}”？\n\n这会删除口袋中的对话记录，无法恢复。电脑上的 Codex 原始会话不会删除。`)) return;
+  if (!confirm(`永久删除“${conversation.title}”？\n\n这会删除口袋中的对话记录，无法恢复。电脑上的原始 Agent 会话不会删除。`)) return;
   try {
     await api(`/api/conversations/${conversation.id}`, { method: "DELETE" });
     state.conversations = state.conversations.filter((item) => item.id !== conversation.id);
@@ -3908,7 +3997,7 @@ async function uploadConversationMedia(file, kind = "image") {
       setQueuedMessages(data.queuedMessages || []);
       showToast(`${mediaLabel}已传到电脑，消息已排队`);
     } else {
-      showToast(`${mediaLabel}已传到电脑并发送给 Codex`);
+      showToast(`${mediaLabel}已传到电脑并发送给 ${agentNameById(state.active?.agentId || "codex")}`);
     }
     schedulePoll(180);
   } catch (error) {
@@ -4000,7 +4089,7 @@ async function pollActiveConversation() {
     setQueuedMessages(data.queuedMessages || []);
     appendEvents(data.conversation.events);
     if (wasRunning && !state.running) {
-      sendBrowserNotification("completion", "Codex 已完成", `${state.identity.codexName} 已处理完当前任务`);
+      sendBrowserNotification("completion", `${state.identity.codexName} 已完成`, `${state.identity.codexName} 已处理完当前任务`);
     }
     updateControls();
     const index = state.conversations.findIndex((item) => item.id === conversationId);
@@ -4057,8 +4146,8 @@ function handleRealtimeMessage(message) {
   }
   if (message.type === "approval") {
     showApprovalAlert(message);
-    showToast(`需要权限审核：${message.title || "Codex 正在等待确认"}`);
-    sendBrowserNotification("approval", "Codex 需要权限确认", message.title || "打开口袋处理权限审核");
+    showToast(`需要权限审核：${message.title || "Agent 正在等待确认"}`);
+    sendBrowserNotification("approval", `${state.identity.codexName} 需要权限确认`, message.title || "打开口袋处理权限审核");
     refreshConversations().catch(() => {});
     if (state.active?.id === message.conversationId) schedulePoll(40);
     else if (document.hidden) document.title = "口袋 · 待确认";
@@ -4652,7 +4741,7 @@ async function sendDirectVoiceMessage(blob, mimeType, durationMs) {
     clearVoiceSessionUi();
     schedulePoll(180);
     showToast(uploaded
-      ? `语音已保存到电脑，但发送给 Codex 失败：${error.message}`
+      ? `语音已保存到电脑，但发送给 Agent 失败：${error.message}`
       : (error.message || "语音发送失败"));
   } finally {
     state.voiceUploading = false;
@@ -5178,7 +5267,7 @@ function migrateScannedPairingOrigin(payload) {
   }
   if (!/^https?:$/.test(scanned.protocol) || scanned.origin === window.location.origin) return false;
   const target = scanned.href;
-  showStartupLoading("正在切换电脑", "二维码已识别，正在打开新的 Codex 连接…");
+  showStartupLoading("正在切换电脑", "二维码已识别，正在打开新的 Agent 连接…");
   try { window.CodexPocketNative?.saveConnectionUrl?.(target); } catch {}
   try { state.eventAbort?.abort(); } catch {}
   try { state.eventSocket?.close(); } catch {}
@@ -5519,15 +5608,7 @@ function bindEvents() {
   elements.closeDrawerButton.addEventListener("click", closeDrawer);
   elements.drawerBackdrop.addEventListener("click", closeDrawer);
   elements.agentSelect?.addEventListener("change", () => {
-    state.selectedAgentId = elements.agentSelect.value || "codex";
-    try { localStorage.setItem("codex-pocket-agent", state.selectedAgentId); } catch {}
-    if (!state.active || composerAgentId() === state.selectedAgentId) {
-      state.models = [];
-      state.selectedModel = "";
-      updateModelUi();
-      loadAvailableModels({ force: true }).catch(() => {});
-    }
-    showToast(`新对话 Agent：${agentNameById(state.selectedAgentId)}`);
+    applyAgentSelection(elements.agentSelect.value || "codex");
   });
   elements.projectSelect.addEventListener("change", () => {
     state.selectedProjectPath = elements.projectSelect.value;

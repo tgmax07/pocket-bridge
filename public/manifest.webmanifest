@@ -1,8 +1,8 @@
 {
   "id": "/",
-  "name": "口袋",
+  "name": "Kodai",
   "short_name": "口袋",
-  "description": "从安卓手机远程使用电脑上的 Codex",
+  "description": "从安卓手机实时管理电脑上的 AI Agent",
   "lang": "zh-CN",
   "dir": "ltr",
   "start_url": "/",
