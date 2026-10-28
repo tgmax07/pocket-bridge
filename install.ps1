@@ -1,4 +1,4 @@
-[CmdletBinding()]
+﻿[CmdletBinding()]
 param(
   [string]$InstallDir = "$env:LOCALAPPDATA\CodexPocket",
   [string]$WorkDir = "",
