@@ -176,6 +176,7 @@ const elements = {
   userAvatarFile: document.getElementById("userAvatarFile"),
   resetIdentityButton: document.getElementById("resetIdentityButton"),
   saveIdentityButton: document.getElementById("saveIdentityButton"),
+  repairCacheButton: document.getElementById("repairCacheButton"),
   avatarCropDialog: document.getElementById("avatarCropDialog"),
   avatarCropTitle: document.getElementById("avatarCropTitle"),
   avatarCropStage: document.getElementById("avatarCropStage"),
@@ -1616,6 +1617,46 @@ function clearCachedAppData() {
       if (key?.startsWith(CONVERSATION_CACHE_PREFIX)) localStorage.removeItem(key);
     }
   } catch {}
+}
+
+async function clearClientRuntimeCaches() {
+  clearCachedAppData();
+  try {
+    if ("caches" in window) {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((key) => caches.delete(key)));
+    }
+  } catch {}
+  try {
+    if ("serviceWorker" in navigator) {
+      const registrations = await navigator.serviceWorker.getRegistrations();
+      await Promise.all(registrations.map((registration) => registration.unregister()));
+    }
+  } catch {}
+}
+
+async function repairClientCacheFromUrl() {
+  let current;
+  try {
+    current = new URL(location.href);
+  } catch {
+    return false;
+  }
+  if (current.searchParams.get("repair") !== "1") return false;
+  await clearClientRuntimeCaches();
+  current.searchParams.delete("repair");
+  current.searchParams.delete("v");
+  history.replaceState(null, "", `${current.pathname}${current.search}${current.hash}`);
+  location.reload();
+  return true;
+}
+
+function requestClientCacheRepair() {
+  const current = new URL(location.href);
+  current.searchParams.set("repair", "1");
+  current.searchParams.set("v", String(Date.now()));
+  showStartupLoading("正在修复页面", "正在清除旧网页缓存，连接和聊天记录会保留…");
+  location.replace(current.href);
 }
 
 function applyBootstrapSnapshot(data) {
@@ -5619,6 +5660,7 @@ function bindEvents() {
   elements.closeImportButton.addEventListener("click", () => elements.importDialog.close());
   elements.infoButton.addEventListener("click", openInfo);
   elements.closeInfoButton.addEventListener("click", () => elements.infoDialog.close());
+  elements.repairCacheButton?.addEventListener("click", requestClientCacheRepair);
   elements.forgetButton.addEventListener("click", () => {
     state.eventAbort?.abort();
     try { state.eventSocket?.close(); } catch {}
@@ -5661,6 +5703,7 @@ function bindEvents() {
 }
 
 async function main() {
+  if (await repairClientCacheFromUrl()) return;
   captureTokenFromLocation();
   setupTheme();
   setupIdentity();

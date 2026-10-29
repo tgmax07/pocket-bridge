@@ -16,7 +16,7 @@
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icon-192.png" type="image/png">
   <link rel="apple-touch-icon" href="/apple-touch-icon.png">
-  <link rel="stylesheet" href="/styles.css?v=0.6.74">
+  <link rel="stylesheet" href="/styles.css?v=0.6.75">
 </head>
 <body>
   <div class="startup-loader" id="startupLoader" role="status" aria-live="polite">
@@ -324,11 +324,16 @@
           </div>
         </details>
 
+        <button class="settings-link-row" id="repairCacheButton" type="button">
+          <span><strong>修复空白页面</strong><small>清除旧网页缓存，保留连接和聊天记录</small></span>
+          <span aria-hidden="true">›</span>
+        </button>
+
         <button class="settings-link-row" id="infoButton" type="button">
           <span><strong>连接与安全</strong><small>令牌、项目与执行通道</small></span>
           <span aria-hidden="true">›</span>
         </button>
-        <div class="drawer-meta"><span>口袋</span><span id="drawerVersion">v0.6.74</span></div>
+        <div class="drawer-meta"><span>口袋</span><span id="drawerVersion">v0.6.75</span></div>
       </section>
 
       <section class="drawer-panel" id="drawerPanelFiles" data-drawer-panel="files" role="tabpanel" aria-labelledby="drawerTabFiles" hidden>
@@ -374,7 +379,7 @@
       <div class="pairing-help">
         <strong>安卓安装</strong>
         <span>连接成功后，在 Chrome 菜单中选择“添加到主屏幕”。</span>
-        <a class="apk-download" id="downloadApkLink" href="/downloads/codex-pocket-v0.6.74.apk" download="codex-pocket-v0.6.74.apk">下载安卓 APK v0.6.74</a>
+        <a class="apk-download" id="downloadApkLink" href="/downloads/codex-pocket-v0.6.75.apk" download="codex-pocket-v0.6.75.apk">下载安卓 APK v0.6.75</a>
       </div>
     </div>
   </section>
@@ -500,7 +505,7 @@
 
   <script src="/vendor/jsQR.js"></script>
   <div class="toast" id="toast" role="status" aria-live="polite"></div>
-  <script type="module" src="/app.js?v=0.6.74"></script>
+  <script type="module" src="/app.js?v=0.6.75"></script>
 </body>
 </html>
 

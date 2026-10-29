@@ -1,6 +1,6 @@
 {
   "name": "codex-pocket",
-  "version": "0.6.74",
+  "version": "0.6.75",
   "private": true,
   "type": "module",
   "description": "A phone-first Agent Manager for AI agents running on your computer.",
