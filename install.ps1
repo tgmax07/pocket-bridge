@@ -12,6 +12,7 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 $repo = "tgmax07/pocket-bridge"
+$releaseVersion = "v0.6.86"
 $branch = "main"
 $taskName = "CodexPocket"
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -125,7 +126,7 @@ try {
   } else {
     Write-Step "Downloading desktop bridge from GitHub"
     $archive = Join-Path $tempRoot "source.zip"
-    Invoke-Download "https://github.com/$repo/archive/refs/heads/$branch.zip" $archive
+    Invoke-Download "https://github.com/$repo/releases/download/$releaseVersion/kodai-desktop-$releaseVersion.zip" $archive
     $extract = Join-Path $tempRoot "source"
     Expand-Archive -LiteralPath $archive -DestinationPath $extract -Force
     $sourceDir = Get-ChildItem -LiteralPath $extract -Directory | Select-Object -First 1

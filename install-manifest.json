@@ -1,6 +1,6 @@
 {
   "name": "kodai-desktop",
-  "version": "0.6.75",
+  "version": "0.6.86",
   "repository": "tgmax07/pocket-bridge",
   "branch": "main",
   "installerUrl": "https://github.com/tgmax07/pocket-bridge/raw/refs/heads/main/install.ps1",
