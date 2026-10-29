@@ -12,7 +12,7 @@ param(
 $ErrorActionPreference = "Stop"
 $ProgressPreference = "SilentlyContinue"
 $repo = "tgmax07/pocket-bridge"
-$releaseVersion = "v0.6.86"
+$releaseVersion = "v0.6.89"
 $branch = "main"
 $taskName = "CodexPocket"
 $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
@@ -115,6 +115,23 @@ function Stop-ExistingPocket([string]$TargetRoot, [int]$EffectivePort) {
   Start-Sleep -Seconds 1
 }
 
+function Find-CodexExecutable {
+  $command = Get-Command "codex" -ErrorAction SilentlyContinue
+  if ($command -and $command.Source -and (Test-Path -LiteralPath $command.Source)) { return $command.Source }
+  $candidates = @((Join-Path $env:LOCALAPPDATA "OpenAI\Codex\bin\codex.exe"),(Join-Path $env:USERPROFILE ".codex\bin\codex.exe"),(Join-Path $env:APPDATA "npm\codex.cmd"))
+  foreach ($candidate in $candidates) { if ($candidate -and (Test-Path -LiteralPath $candidate)) { return $candidate } }
+  try { foreach ($process in @(Get-Process -Name "codex" -ErrorAction SilentlyContinue)) { if ($process.Path -and (Test-Path -LiteralPath $process.Path)) { return $process.Path } } } catch {}
+  $codexRoot = Join-Path $env:LOCALAPPDATA "OpenAI\Codex"
+  if (Test-Path -LiteralPath $codexRoot) { $found = Get-ChildItem -LiteralPath $codexRoot -Recurse -File -Filter "codex.exe" -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending | Select-Object -First 1; if ($found) { return $found.FullName } }
+  return ""
+}
+function Set-EnvValue([string]$Path, [string]$Key, [string]$Value) {
+  $lines = @(); if (Test-Path -LiteralPath $Path) { $lines = @(Get-Content -Encoding utf8 -LiteralPath $Path) }
+  $found = $false
+  $next = foreach ($line in $lines) { if ($line -match "^$([regex]::Escape($Key))=") { $found = $true; "$Key=$Value" } else { $line } }
+  if (-not $found) { $next = @($next) + "$Key=$Value" }
+  @($next) | Set-Content -Encoding utf8 -LiteralPath $Path
+}
 try {
   New-Item -ItemType Directory -Force -Path $tempRoot, $installFull | Out-Null
   $sourceDir = $null
@@ -138,7 +155,7 @@ try {
   if (-not (Test-Path -LiteralPath $sourcePackagePath)) { throw "GitHub package is missing package.json" }
   $desiredVersion = (Get-Content -Raw -Encoding utf8 -LiteralPath $sourcePackagePath | ConvertFrom-Json).version
   if (-not $desiredVersion) { throw "Unable to read target version" }
-  $codex = Ensure-Command "codex"
+  $codex = Find-CodexExecutable
   if (-not $codex) { throw "Codex was not found. Install and sign in to Codex Desktop/CLI first." }
   if (-not $WorkDir) {
     $cwd = (Get-Location).Path
@@ -179,6 +196,8 @@ try {
     ) | Set-Content -Encoding utf8 -LiteralPath $envPath
   }
 
+  Set-EnvValue $envPath "CODEX_BIN" $codex
+  Set-EnvValue $envPath "CODEX_TRANSPORT" "app-server"
   $effectivePort = $Port
   if (Test-Path -LiteralPath $envPath) {
     foreach ($line in Get-Content -Encoding utf8 -LiteralPath $envPath) {
